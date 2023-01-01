@@ -1,111 +1,125 @@
-// webrtcEngine.js
 const { WebSocket } = require("ws");
 
-let broadcaster = null;
-let listeners = new Set();
+// Dynamic Rooms Map Matrix: { [roomid]: { broadcaster: ws, listeners: Set() } }
+let rooms = {};
 
-/**
- * Initializes and binds the WebRTC signaling logic onto the global WSS instance.
- * @param {WebSocketServer} wss - The WebSocket server wrapper instance
- */
 const initWebRTCSignaling = (wss) => {
-  console.log("⚡ WebRTC Signaling Engine attached to Express Core Instance");
+  console.log("⚡ WebRTC Multi-Room Distribution Mesh Initialized");
 
   wss.on("connection", (ws) => {
-    console.log("⚓ New mobile device linked to WebRTC gateway");
+    let currentRoomId = null;
+    let isBroadcaster = false;
+
+    // View updates matrix builder
+    const syncViewersCounter = (roomid) => {
+      if (!rooms[roomid]) return;
+      const count = rooms[roomid].listeners.size;
+      const metricsPayload = JSON.stringify({ type: "view-count-changed", count });
+
+      if (rooms[roomid].broadcaster && rooms[roomid].broadcaster.readyState === WebSocket.OPEN) {
+        rooms[roomid].broadcaster.send(metricsPayload);
+      }
+      rooms[roomid].listeners.forEach((listener) => {
+        if (listener.readyState === WebSocket.OPEN) {
+          listener.send(metricsPayload);
+        }
+      });
+    };
 
     ws.on("message", (message) => {
       try {
         const data = JSON.parse(message);
+        const roomid = data.roomid; // Maps exactly from the parsed data stream
 
         switch (data.type) {
           case "register-broadcaster":
-            broadcaster = ws;
-            console.log("📢 Broadcaster registered as source master");
+            if (!roomid) return;
+            currentRoomId = roomid;
+            isBroadcaster = true;
+
+            if (!rooms[roomid]) rooms[roomid] = { broadcaster: null, listeners: new Set() };
+            rooms[roomid].broadcaster = ws;
+            console.log(`📢 Master Stream Node Registered for Room Key: [${roomid}]`);
+            syncViewersCounter(roomid);
             break;
 
           case "register-listener":
-            listeners.add(ws);
-            console.log("🎧 New passive listener attached to subscriber array");
-            // If a broadcast offer is already staged, inform the incoming listener
-            if (broadcaster) {
-              ws.send(JSON.stringify({ type: "broadcaster-online" }));
-            }
-            break;
+            if (!roomid) return;
+            currentRoomId = roomid;
+            isBroadcaster = false;
 
-          case "request-new-offer":
-            // ✅ CRITICAL RE-NEGOTIATION FIX: Late listeners trigger a renegotiation request to the broadcaster
-            console.log(
-              "🔄 Listener requested a fresh offer. Alerting broadcaster...",
-            );
-            if (broadcaster && broadcaster.readyState === WebSocket.OPEN) {
-              broadcaster.send(JSON.stringify({ type: "request-offer" }));
+            if (!rooms[roomid]) rooms[roomid] = { broadcaster: null, listeners: new Set() };
+            rooms[roomid].listeners.add(ws);
+            console.log(`🎧 Client Subscriber added to dynamic map channel: [${roomid}]`);
+
+            syncViewersCounter(roomid);
+
+            if (rooms[roomid].broadcaster && rooms[roomid].broadcaster.readyState === WebSocket.OPEN) {
+              ws.send(JSON.stringify({ type: "broadcaster-online" }));
+              rooms[roomid].broadcaster.send(JSON.stringify({ type: "request-offer" }));
             }
             break;
 
           case "offer":
-            console.log(
-              "📦 Offer received, piping broadcast tracks down to listeners...",
-            );
-            listeners.forEach((listener) => {
-              if (listener.readyState === WebSocket.OPEN) {
-                listener.send(JSON.stringify({ type: "offer", sdp: data.sdp }));
-              }
-            });
+            if (currentRoomId && rooms[currentRoomId]) {
+              rooms[currentRoomId].listeners.forEach((listener) => {
+                if (listener.readyState === WebSocket.OPEN) {
+                  listener.send(JSON.stringify({ type: "offer", sdp: data.sdp }));
+                }
+              });
+            }
             break;
 
           case "answer":
-            console.log(
-              "🤝 Answer received, forwarding handshake down to broadcaster...",
-            );
-            if (broadcaster && broadcaster.readyState === WebSocket.OPEN) {
-              broadcaster.send(
-                JSON.stringify({ type: "answer", sdp: data.sdp }),
-              );
+            if (currentRoomId && rooms[currentRoomId] && rooms[currentRoomId].broadcaster) {
+              if (rooms[currentRoomId].broadcaster.readyState === WebSocket.OPEN) {
+                rooms[currentRoomId].broadcaster.send(JSON.stringify({ type: "answer", sdp: data.sdp }));
+              }
             }
             break;
 
           case "ice-candidate":
-            if (ws === broadcaster) {
-              listeners.forEach((listener) => {
-                if (listener.readyState === WebSocket.OPEN) {
-                  listener.send(
-                    JSON.stringify({
-                      type: "ice-candidate",
-                      candidate: data.candidate,
-                    }),
-                  );
+            if (currentRoomId && rooms[currentRoomId]) {
+              if (isBroadcaster) {
+                rooms[currentRoomId].listeners.forEach((listener) => {
+                  if (listener.readyState === WebSocket.OPEN) {
+                    listener.send(JSON.stringify({ type: "ice-candidate", candidate: data.candidate }));
+                  }
+                });
+              } else {
+                if (rooms[currentRoomId].broadcaster && rooms[currentRoomId].broadcaster.readyState === WebSocket.OPEN) {
+                  rooms[currentRoomId].broadcaster.send(JSON.stringify({ type: "ice-candidate", candidate: data.candidate }));
                 }
-              });
-            } else {
-              if (broadcaster && broadcaster.readyState === WebSocket.OPEN) {
-                broadcaster.send(
-                  JSON.stringify({
-                    type: "ice-candidate",
-                    candidate: data.candidate,
-                  }),
-                );
               }
             }
             break;
         }
       } catch (err) {
-        console.error("❌ Message parsing anomaly recorded:", err);
+        console.error("❌ Signalling processing data parsing fault:", err);
       }
     });
 
     ws.on("close", () => {
-      if (ws === broadcaster) {
-        console.log("❌ Broadcaster stream disconnected from grid");
-        broadcaster = null;
-        listeners.forEach((listener) => {
+      if (!currentRoomId || !rooms[currentRoomId]) return;
+
+      if (isBroadcaster) {
+        console.log(`❌ Channel Streamer Dropped out for room: ${currentRoomId}`);
+        rooms[currentRoomId].listeners.forEach((listener) => {
           if (listener.readyState === WebSocket.OPEN) {
             listener.send(JSON.stringify({ type: "broadcaster-offline" }));
           }
         });
+        rooms[currentRoomId].broadcaster = null;
       } else {
-        console.log("ℹ️ Listener removed from subscriber array");
-        listeners.delete(ws);
+        rooms[currentRoomId].listeners.delete(ws);
+        console.log(`ℹ️ Client left structural dynamic loop channels for: ${currentRoomId}`);
+        syncViewersCounter(currentRoomId);
+      }
+
+      // Memory Allocation Cleanup bounds
+      if (!rooms[currentRoomId].broadcaster && rooms[currentRoomId].listeners.size === 0) {
+        delete rooms[currentRoomId];
+        console.log(`🧹 Structural GC sweep finalized map arrays for empty channel: ${currentRoomId}`);
       }
     });
   });
