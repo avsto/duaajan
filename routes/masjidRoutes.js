@@ -14,7 +14,6 @@ const admin = require("firebase-admin");
 // ======================================
 
 router.get("/list", auth, async (req, res) => {
-
   try {
 
     const masjids = await User.find({
