@@ -6,6 +6,8 @@ const serviceAccount = require(
 
 if (!admin.apps.length) {
 
+  console.log(admin.apps);
+
   admin.initializeApp({
     credential:
       admin.credential.cert(
