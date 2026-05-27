@@ -6,7 +6,7 @@ const auth = require("../middleware/auth");
 
 const User = require("../models/User");
 
-const admin = require("firebase-admin");
+const admin = require("../firebase");
 
 
 // ======================================
