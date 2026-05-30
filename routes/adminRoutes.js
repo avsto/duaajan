@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 
 const User = require("../models/User");
+const Ad = require("../models/Ad");
 
 // =========================
 // LOGIN PAGE
@@ -40,7 +41,7 @@ router.post("/send-otp", async (req, res) => {
       });
     }
 
-    const otp = '1111'; //Math.floor(100000 + Math.random() * 900000).toString();
+    const otp = "1111"; //Math.floor(100000 + Math.random() * 900000).toString();
 
     admin.otp = otp;
     admin.otpExpire = new Date(Date.now() + 5 * 60 * 1000);
@@ -130,27 +131,34 @@ router.get("/dashboard", async (req, res) => {
       return res.redirect("/admin");
     }
 
-    // dynamic stats
-    const users = await User.countDocuments({
-      role: "user",
-    });
+    const admin = await User.findById(req.session.admin.id).lean();
 
-    const liveUsers = await User.countDocuments({
-      role: "user",
-      isLive: true,
-    });
+    const [users, liveUsers, masjids, ads] = await Promise.all([
+      User.countDocuments({
+        role: "user",
+      }),
 
-    const masjids = await User.countDocuments({
-      role: "masjid",
-    });
+      User.countDocuments({
+        role: "user",
+        isLive: true,
+      }),
+
+      User.countDocuments({
+        role: "masjid",
+      }),
+
+      Ad.countDocuments(),
+    ]);
 
     const stats = {
       users,
       liveUsers,
       masjids,
+      ads,
     };
 
     res.render("admin/dashboard", {
+      admin,
       stats,
     });
   } catch (error) {
@@ -160,55 +168,410 @@ router.get("/dashboard", async (req, res) => {
   }
 });
 
+
+
+
 // =========================
 // USERS
 // =========================
 router.get("/users", async (req, res) => {
+  try {
+    if (!req.session.admin) {
+      return res.redirect("/admin");
+    }
 
-  const users = await User.find({
-    role: "user"
-  }).sort({ createdAt: -1 });
+    const page = parseInt(req.query.page) || 1;
 
-  res.render("admin/users", {
-    users
-  });
+    const limit = 20;
 
+    const search = req.query.search || "";
+
+    const query = {
+      role: "user",
+    };
+
+    // Search
+
+    if (search.trim()) {
+      query.$or = [
+        {
+          name: {
+            $regex: search,
+            $options: "i",
+          },
+        },
+        {
+          mobile: {
+            $regex: search,
+            $options: "i",
+          },
+        },
+        {
+          location: {
+            $regex: search,
+            $options: "i",
+          },
+        },
+      ];
+    }
+
+    const totalUsers = await User.countDocuments(query);
+
+    const totalPages = Math.ceil(totalUsers / limit);
+
+    const users = await User.find(query)
+
+      .sort({
+        createdAt: -1,
+      })
+
+      .skip((page - 1) * limit)
+
+      .limit(limit)
+
+      .lean();
+
+    return res.render("admin/users", {
+      users,
+      page,
+      totalPages,
+      totalUsers,
+      search,
+    });
+  } catch (error) {
+    console.log(error);
+
+    return res.send("Server Error");
+  }
 });
+
+// =========================
+// DELETE USER
+// =========================
+
+router.delete("/users/:id", async (req, res) => {
+  try {
+    if (!req.session.admin) {
+      return res.status(401).json({
+        success: false,
+      });
+    }
+
+    await User.findByIdAndDelete(req.params.id);
+
+    return res.json({
+      success: true,
+      message: "User deleted successfully",
+    });
+  } catch (error) {
+    console.log(error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Server Error",
+    });
+  }
+});
+
 // =========================
 // MASJIDS
 // =========================
+// =========================
+// MASJIDS LIST
+// =========================
+
 router.get("/masjids", async (req, res) => {
+  try {
+    if (!req.session.admin) {
+      return res.redirect("/admin");
+    }
 
-  const masjids = await User.find({
-    role: "masjid"
-  }).sort({
-    createdAt: -1
-  });
+    const page = parseInt(req.query.page) || 1;
 
-  res.render("admin/masjids", {
-    masjids
-  });
+    const limit = 20;
 
+    const search = req.query.search || "";
+
+    const query = {
+      role: "masjid",
+    };
+
+    if (search.trim()) {
+      query.$or = [
+        {
+          masjidName: {
+            $regex: search,
+            $options: "i",
+          },
+        },
+        {
+          imamName: {
+            $regex: search,
+            $options: "i",
+          },
+        },
+        {
+          mobile: {
+            $regex: search,
+            $options: "i",
+          },
+        },
+        {
+          address: {
+            $regex: search,
+            $options: "i",
+          },
+        },
+      ];
+    }
+
+    const totalMasjids = await User.countDocuments(query);
+
+    const totalPages = Math.ceil(totalMasjids / limit);
+
+    const masjids = await User.find(query)
+
+      .sort({
+        createdAt: -1,
+      })
+
+      .skip((page - 1) * limit)
+
+      .limit(limit)
+
+      .lean();
+
+    res.render("admin/masjids", {
+      masjids,
+      page,
+      totalPages,
+      totalMasjids,
+      search,
+    });
+  } catch (error) {
+    console.log(error);
+
+    res.send("Server Error");
+  }
 });
 
 // =========================
 // UPDATE MASJID STATUS
 // =========================
+
 router.post("/masjids/:id/status", async (req, res) => {
+  try {
+    if (!req.session.admin) {
+      return res.status(401).json({
+        success: false,
+      });
+    }
 
-  const { status } = req.body;
+    const { status } = req.body;
 
-  await User.findByIdAndUpdate(
-    req.params.id,
-    { status }
-  );
+    if (!["approved", "rejected", "pending"].includes(status)) {
+      return res.status(400).json({
+        success: false,
+      });
+    }
 
-  res.json({
-    success: true
-  });
+    await User.findByIdAndUpdate(req.params.id, {
+      status,
+    });
+
+    return res.json({
+      success: true,
+    });
+  } catch (error) {
+    console.log(error);
+
+    return res.status(500).json({
+      success: false,
+    });
+  }
+});
+
+// =========================
+// DELETE MASJID
+// =========================
+
+router.delete("/masjids/:id", async (req, res) => {
+  try {
+    if (!req.session.admin) {
+      return res.status(401).json({
+        success: false,
+      });
+    }
+
+    await User.findByIdAndDelete(req.params.id);
+
+    return res.json({
+      success: true,
+    });
+  } catch (error) {
+    console.log(error);
+
+    return res.status(500).json({
+      success: false,
+    });
+  }
+});
+
+// =========================
+// ADS LIST
+// =========================
+
+router.get("/ads", async (req, res) => {
+  try {
+    if (!req.session.admin) {
+      return res.redirect("/admin");
+    }
+
+    const ads = await Ad.find().sort({ createdAt: -1 }).lean();
+
+    res.render("admin/ads", {
+      ads,
+    });
+  } catch (error) {
+    console.log(error);
+
+    res.send("Server Error");
+  }
+});
+
+router.delete("/ads/:id", async (req, res) => {
+  try {
+    if (!req.session.admin) {
+      return res.status(401).json({
+        success: false,
+      });
+    }
+
+    await Ad.findByIdAndDelete(req.params.id);
+
+    res.json({
+      success: true,
+    });
+  } catch (error) {
+    console.log(error);
+
+    res.status(500).json({
+      success: false,
+    });
+  }
+});
+
+router.get("/ads/create", (req, res) => {
+
+  if (!req.session.admin) {
+    return res.redirect("/admin");
+  }
+
+  res.render("admin/create-ad");
 
 });
 
+router.post("/ads/create", async (req, res) => {
+  try {
+
+    const ad = await Ad.create(req.body);
+
+    return res.json({
+      success: true,
+      ad
+    });
+
+  } catch (error) {
+
+    console.log(error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Server Error"
+    });
+
+  }
+});
+
+
+// =========================
+// EDIT AD PAGE
+// =========================
+router.get("/ads/edit/:id", async (req, res) => {
+  try {
+
+    if (!req.session.admin) {
+      return res.redirect("/admin");
+    }
+
+    const ad = await Ad.findById(req.params.id);
+
+    if (!ad) {
+      return res.send("Advertisement not found");
+    }
+
+    res.render("admin/edit-ad", {
+      ad
+    });
+
+  } catch (error) {
+
+    console.log(error);
+    res.send("Server Error");
+
+  }
+});
+
+router.put("/ads/:id", async (req, res) => {
+  try {
+
+    const ad = await Ad.findByIdAndUpdate(
+      req.params.id,
+      req.body,
+      { new: true }
+    );
+
+    res.json({
+      success: true,
+      ad
+    });
+
+  } catch (error) {
+
+    console.log(error);
+
+    res.status(500).json({
+      success: false
+    });
+
+  }
+});
+// =========================
+// update ad status
+// =========================
+router.put("/ads/:id", async (req, res) => {
+  try {
+
+    await Ad.findByIdAndUpdate(
+      req.params.id,
+      req.body,
+      { new: true }
+    );
+
+    res.json({
+      success: true
+    });
+
+  } catch (error) {
+
+    console.log(error);
+
+    res.status(500).json({
+      success: false
+    });
+
+  }
+});
 // =========================
 // LOGOUT
 // =========================

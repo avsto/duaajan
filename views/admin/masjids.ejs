@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 
@@ -17,9 +18,9 @@
   <style>
 
     body{
+      margin:0;
       background:#0f172a;
       color:#fff;
-      margin:0;
       font-family:Arial,sans-serif;
     }
 
@@ -34,11 +35,12 @@
       font-weight:700;
     }
 
-    .content-card{
+    .page-card{
       background:#111827;
       border-radius:24px;
       padding:25px;
       margin-top:30px;
+      border:1px solid rgba(255,255,255,.05);
     }
 
     .search-box{
@@ -56,14 +58,17 @@
     }
 
     .table{
-      color:white;
+      color:#fff;
       margin-bottom:0;
+    }
+
+    .table thead{
+      background:#1e293b;
     }
 
     .table th{
       border:none;
       color:#cbd5e1;
-      background:#1e293b;
       padding:16px;
     }
 
@@ -73,15 +78,15 @@
       vertical-align:middle;
     }
 
-    .masjid-avatar{
+    .masjid-icon{
       width:50px;
       height:50px;
-      border-radius:14px;
+      border-radius:12px;
       background:#1e293b;
       display:flex;
       align-items:center;
       justify-content:center;
-      font-size:20px;
+      font-size:22px;
       color:#60a5fa;
     }
 
@@ -97,20 +102,13 @@
       background:#ef4444;
     }
 
-    .badge-live{
-      background:#22c55e;
-    }
-
-    .badge-offline{
-      background:#64748b;
-    }
-
     .btn-action{
       border:none;
       border-radius:10px;
-      padding:7px 12px;
+      padding:6px 12px;
       color:white;
       margin-right:5px;
+      margin-bottom:5px;
     }
 
     .btn-view{
@@ -123,6 +121,21 @@
 
     .btn-reject{
       background:#ef4444;
+    }
+
+    .btn-delete{
+      background:#dc2626;
+    }
+
+    .pagination .page-link{
+      background:#1e293b;
+      border-color:#334155;
+      color:#fff;
+    }
+
+    .pagination .active .page-link{
+      background:#3b82f6;
+      border-color:#3b82f6;
     }
 
   </style>
@@ -152,20 +165,21 @@
 
   <div class="container py-4">
 
-    <div class="content-card">
+    <div class="page-card">
 
       <div class="d-flex justify-content-between align-items-center mb-4">
 
         <h3 class="mb-0">
-          Registered Masjids ({{ filteredMasjids.length }})
+          Total Masjids ({{ totalMasjids }})
         </h3>
 
         <input
           type="text"
           class="form-control search-box"
-          style="max-width:300px"
+          style="max-width:320px"
           placeholder="Search Masjid..."
           v-model="search"
+          @keyup.enter="searchMasjid"
         >
 
       </div>
@@ -181,9 +195,8 @@
               <th>Imam</th>
               <th>Mobile</th>
               <th>Status</th>
-              <th>Live</th>
               <th>Address</th>
-              <th width="220">Action</th>
+              <th width="260">Action</th>
             </tr>
 
           </thead>
@@ -191,7 +204,7 @@
           <tbody>
 
             <tr
-              v-for="masjid in filteredMasjids"
+              v-for="masjid in masjids"
               :key="masjid._id"
             >
 
@@ -199,7 +212,7 @@
 
                 <div class="d-flex align-items-center">
 
-                  <div class="masjid-avatar me-3">
+                  <div class="masjid-icon me-3">
                     <i class="fa-solid fa-mosque"></i>
                   </div>
 
@@ -232,23 +245,12 @@
                 <span
                   class="badge"
                   :class="{
-                    'badge-approved': masjid.status==='approved',
-                    'badge-pending': masjid.status==='pending',
-                    'badge-rejected': masjid.status==='rejected'
+                    'badge-approved': masjid.status === 'approved',
+                    'badge-pending': masjid.status === 'pending',
+                    'badge-rejected': masjid.status === 'rejected'
                   }"
                 >
                   {{ masjid.status }}
-                </span>
-
-              </td>
-
-              <td>
-
-                <span
-                  class="badge"
-                  :class="masjid.isLive ? 'badge-live' : 'badge-offline'"
-                >
-                  {{ masjid.isLive ? 'LIVE' : 'OFFLINE' }}
                 </span>
 
               </td>
@@ -267,21 +269,36 @@
                 </button>
 
                 <button
+                  v-if="masjid.status !== 'approved'"
                   class="btn-action btn-approve"
                   @click="updateStatus(masjid,'approved')"
-                  v-if="masjid.status !== 'approved'"
                 >
                   Approve
                 </button>
 
                 <button
+                  v-if="masjid.status !== 'rejected'"
                   class="btn-action btn-reject"
                   @click="updateStatus(masjid,'rejected')"
-                  v-if="masjid.status !== 'rejected'"
                 >
                   Reject
                 </button>
 
+                <button
+                  class="btn-action btn-delete"
+                  @click="deleteMasjid(masjid._id)"
+                >
+                  Delete
+                </button>
+
+              </td>
+
+            </tr>
+
+            <tr v-if="masjids.length === 0">
+
+              <td colspan="6" class="text-center py-4">
+                No Masjid Found
               </td>
 
             </tr>
@@ -289,6 +306,59 @@
           </tbody>
 
         </table>
+
+      </div>
+
+      <div class="d-flex justify-content-between align-items-center mt-4">
+
+        <div>
+          Page {{ page }} of {{ totalPages }}
+        </div>
+
+        <ul
+          class="pagination mb-0"
+          v-if="totalPages > 1"
+        >
+
+          <li
+            class="page-item"
+            :class="{disabled: page === 1}"
+          >
+            <a
+              class="page-link"
+              :href="getPageUrl(page - 1)"
+            >
+              Previous
+            </a>
+          </li>
+
+          <li
+            v-for="p in visiblePages"
+            :key="p"
+            class="page-item"
+            :class="{active:p === page}"
+          >
+            <a
+              class="page-link"
+              :href="getPageUrl(p)"
+            >
+              {{ p }}
+            </a>
+          </li>
+
+          <li
+            class="page-item"
+            :class="{disabled: page === totalPages}"
+          >
+            <a
+              class="page-link"
+              :href="getPageUrl(page + 1)"
+            >
+              Next
+            </a>
+          </li>
+
+        </ul>
 
       </div>
 
@@ -305,36 +375,57 @@ new Vue({
   el:"#app",
 
   data:{
-    search:"",
+    search:'<%= search %>',
+    page:<%= page %>,
+    totalPages:<%= totalPages %>,
+    totalMasjids:<%= totalMasjids %>,
     masjids:<%- JSON.stringify(masjids) %>
   },
 
   computed:{
 
-    filteredMasjids(){
+    visiblePages(){
 
-      return this.masjids.filter(m => {
+      let start = Math.max(1, this.page - 2);
+      let end = Math.min(this.totalPages, start + 4);
 
-        return (
-          m.masjidName?.toLowerCase().includes(this.search.toLowerCase()) ||
-          m.mobile?.includes(this.search) ||
-          m.imamName?.toLowerCase().includes(this.search.toLowerCase())
-        );
+      if(end - start < 4){
+        start = Math.max(1, end - 4);
+      }
 
-      });
+      let pages = [];
 
+      for(let i=start;i<=end;i++){
+        pages.push(i);
+      }
+
+      return pages;
     }
 
   },
 
   methods:{
 
-    viewMasjid(masjid){
+    searchMasjid(){
+
+      window.location.href =
+        `/admin/masjids?page=1&search=${encodeURIComponent(this.search)}`;
+
+    },
+
+    getPageUrl(page){
+
+      return `/admin/masjids?page=${page}&search=${encodeURIComponent(this.search)}`;
+
+    },
+
+    viewMasjid(m){
 
       alert(
-        "Masjid: " + masjid.masjidName +
-        "\nImam: " + masjid.imamName +
-        "\nMobile: " + masjid.mobile
+        "Masjid: " + m.masjidName +
+        "\nImam: " + m.imamName +
+        "\nMobile: " + m.mobile +
+        "\nAddress: " + m.address
       );
 
     },
@@ -343,22 +434,58 @@ new Vue({
 
       try{
 
-        await fetch(
+        const res = await fetch(
           `/admin/masjids/${masjid._id}/status`,
           {
             method:"POST",
             headers:{
               "Content-Type":"application/json"
             },
-            body:JSON.stringify({ status })
+            body:JSON.stringify({status})
           }
         );
 
-        masjid.status = status;
+        if(res.ok){
+          masjid.status = status;
+        }
 
       }catch(err){
 
-        alert("Failed");
+        alert("Status update failed");
+
+      }
+
+    },
+
+    async deleteMasjid(id){
+
+      if(!confirm("Delete this masjid?")){
+        return;
+      }
+
+      try{
+
+        const res = await fetch(
+          `/admin/masjids/${id}`,
+          {
+            method:"DELETE"
+          }
+        );
+
+        if(res.ok){
+
+          this.masjids =
+            this.masjids.filter(
+              m => m._id !== id
+            );
+
+          this.totalMasjids--;
+
+        }
+
+      }catch(err){
+
+        alert("Delete failed");
 
       }
 
@@ -373,3 +500,4 @@ new Vue({
 </body>
 
 </html>
+

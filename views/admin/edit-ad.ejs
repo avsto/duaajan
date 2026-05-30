@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Edit Advertisement - DuaAjan</title>
+
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+
+    <script src="https://cdn.jsdelivr.net/npm/vue@2/dist/vue.js"></script>
+
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+
+    <style>
+        body{
+            margin:0;
+            background:#0f172a;
+            color:white;
+            font-family:Arial,sans-serif;
+            min-height:100vh;
+        }
+
+        .topbar{
+            background:#111827;
+            padding:20px 30px;
+            border-bottom:1px solid rgba(255,255,255,.08);
+        }
+
+        .page-card{
+            background:#111827;
+            border-radius:24px;
+            padding:30px;
+            margin-top:30px;
+            border:1px solid rgba(255,255,255,.05);
+        }
+
+        .form-control,
+        .form-select{
+            background:#1e293b;
+            border:1px solid #334155;
+            color:white;
+            min-height:52px;
+        }
+
+        .form-control:focus,
+        .form-select:focus{
+            background:#1e293b;
+            color:white;
+            border-color:#3b82f6;
+            box-shadow:none;
+        }
+
+        textarea.form-control{
+            min-height:120px;
+        }
+
+        .preview-card{
+            background:#1e293b;
+            border-radius:18px;
+            overflow:hidden;
+            border:1px solid rgba(255,255,255,.05);
+        }
+
+        .preview-image{
+            width:100%;
+            height:220px;
+            object-fit:cover;
+        }
+
+        .preview-content{
+            padding:15px;
+        }
+
+        .btn-save{
+            background:#10b981;
+            border:none;
+            color:white;
+            border-radius:14px;
+            padding:14px 30px;
+        }
+
+        .btn-save:hover{
+            background:#059669;
+        }
+
+        .section-title{
+            color:#60a5fa;
+            font-size:18px;
+            font-weight:700;
+            margin-bottom:20px;
+        }
+
+        label{
+            color:#cbd5e1;
+            margin-bottom:8px;
+        }
+    </style>
+
+</head>
+
+<body>
+
+<div id="app">
+
+    <div class="topbar">
+
+        <div class="d-flex justify-content-between align-items-center">
+
+            <h3 class="mb-0">
+                <i class="fa-solid fa-pen-to-square me-2"></i>
+                Edit Advertisement
+            </h3>
+
+            <a href="/admin/ads" class="btn btn-light">
+                Back
+            </a>
+
+        </div>
+
+    </div>
+
+    <div class="container py-4">
+
+        <div class="page-card">
+
+            <div class="row">
+
+                <div class="col-lg-8">
+
+                    <div class="section-title">
+                        Advertisement Details
+                    </div>
+
+                    <div class="mb-3">
+
+                        <label>Title</label>
+
+                        <input
+                            type="text"
+                            class="form-control"
+                            v-model="form.title"
+                        >
+
+                    </div>
+
+                    <div class="mb-3">
+
+                        <label>Description</label>
+
+                        <textarea
+                            class="form-control"
+                            v-model="form.description"
+                        ></textarea>
+
+                    </div>
+
+                    <div class="mb-3">
+
+                        <label>Image URL</label>
+
+                        <input
+                            type="text"
+                            class="form-control"
+                            v-model="form.image"
+                        >
+
+                    </div>
+
+                    <div class="mb-3">
+
+                        <label>Redirect URL</label>
+
+                        <input
+                            type="text"
+                            class="form-control"
+                            v-model="form.redirectUrl"
+                        >
+
+                    </div>
+
+                    <hr class="border-secondary">
+
+                    <div class="row">
+
+                        <div class="col-md-6 mb-3">
+
+                            <label>Advertiser Name</label>
+
+                            <input
+                                type="text"
+                                class="form-control"
+                                v-model="form.advertiserName"
+                            >
+
+                        </div>
+
+                        <div class="col-md-6 mb-3">
+
+                            <label>Advertiser Mobile</label>
+
+                            <input
+                                type="text"
+                                class="form-control"
+                                v-model="form.advertiserMobile"
+                            >
+
+                        </div>
+
+                    </div>
+
+                    <div class="row">
+
+                        <div class="col-md-4 mb-3">
+
+                            <label>Ad Type</label>
+
+                            <select
+                                class="form-select"
+                                v-model="form.adType"
+                            >
+                                <option value="banner">Banner</option>
+                                <option value="slider">Slider</option>
+                                <option value="popup">Popup</option>
+                                <option value="video">Video</option>
+                            </select>
+
+                        </div>
+
+                        <div class="col-md-4 mb-3">
+
+                            <label>Position</label>
+
+                            <select
+                                class="form-select"
+                                v-model="form.position"
+                            >
+                                <option value="home_top">Home Top</option>
+                                <option value="home_bottom">Home Bottom</option>
+                                <option value="live_screen">Live Screen</option>
+                                <option value="masjid_screen">Masjid Screen</option>
+                                <option value="donation_screen">Donation Screen</option>
+                            </select>
+
+                        </div>
+
+                        <div class="col-md-4 mb-3">
+
+                            <label>Status</label>
+
+                            <select
+                                class="form-select"
+                                v-model="form.isActive"
+                            >
+                                <option :value="true">Active</option>
+                                <option :value="false">Inactive</option>
+                            </select>
+
+                        </div>
+
+                    </div>
+
+                    <div class="row">
+
+                        <div class="col-md-6 mb-3">
+
+                            <label>Start Date</label>
+
+                            <input
+                                type="date"
+                                class="form-control"
+                                v-model="form.startDate"
+                            >
+
+                        </div>
+
+                        <div class="col-md-6 mb-3">
+
+                            <label>End Date</label>
+
+                            <input
+                                type="date"
+                                class="form-control"
+                                v-model="form.endDate"
+                            >
+
+                        </div>
+
+                    </div>
+
+                    <button
+                        class="btn btn-save"
+                        @click="updateAd"
+                        :disabled="loading"
+                    >
+
+                        <span v-if="loading">
+                            Updating...
+                        </span>
+
+                        <span v-else>
+                            <i class="fa-solid fa-floppy-disk me-2"></i>
+                            Update Advertisement
+                        </span>
+
+                    </button>
+
+                </div>
+
+                <div class="col-lg-4">
+
+                    <div class="section-title">
+                        Live Preview
+                    </div>
+
+                    <div class="preview-card">
+
+                        <img
+                            :src="form.image || 'https://placehold.co/600x300?text=Preview'"
+                            class="preview-image"
+                        >
+
+                        <div class="preview-content">
+
+                            <h5>
+                                {{ form.title || 'Advertisement Title' }}
+                            </h5>
+
+                            <p class="text-secondary mb-0">
+                                {{ form.description || 'Description preview...' }}
+                            </p>
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+        </div>
+
+    </div>
+
+</div>
+
+<script>
+
+new Vue({
+
+    el:"#app",
+
+    data:{
+
+        loading:false,
+
+        form:{
+            _id:"<%= ad._id %>",
+            title:`<%= ad.title || '' %>`,
+            description:`<%= ad.description || '' %>`,
+            image:`<%= ad.image || '' %>`,
+            redirectUrl:`<%= ad.redirectUrl || '' %>`,
+            advertiserName:`<%= ad.advertiserName || '' %>`,
+            advertiserMobile:`<%= ad.advertiserMobile || '' %>`,
+            adType:`<%= ad.adType || 'banner' %>`,
+            position:`<%= ad.position || 'home_top' %>`,
+            isActive:<%= ad.isActive ? 'true' : 'false' %>,
+            startDate:"<%= ad.startDate ? new Date(ad.startDate).toISOString().split('T')[0] : '' %>",
+            endDate:"<%= ad.endDate ? new Date(ad.endDate).toISOString().split('T')[0] : '' %>"
+        }
+
+    },
+
+    methods:{
+
+        async updateAd(){
+
+            try{
+
+                this.loading = true;
+
+                await axios.put(
+                    "/admin/ads/" + this.form._id,
+                    this.form
+                );
+
+                alert("Advertisement Updated Successfully");
+
+                window.location.href =
+                    "/admin/ads";
+
+            }catch(error){
+
+                console.log(error);
+
+                alert("Failed to update advertisement");
+
+            }finally{
+
+                this.loading = false;
+
+            }
+
+        }
+
+    }
+
+});
+
+</script>
+
+</body>
+</html>

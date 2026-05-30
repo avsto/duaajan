@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 
@@ -113,6 +114,22 @@
       color:white;
     }
 
+    .pagination .page-link{
+      background:#1e293b;
+      border-color:#334155;
+      color:#fff;
+    }
+
+    .pagination .active .page-link{
+      background:#3b82f6;
+      border-color:#3b82f6;
+    }
+
+    .pagination .disabled .page-link{
+      background:#111827;
+      color:#64748b;
+    }
+
   </style>
 
 </head>
@@ -120,8 +137,6 @@
 <body>
 
 <div id="app">
-
-  <!-- Header -->
 
   <div class="topbar">
 
@@ -140,8 +155,6 @@
 
   </div>
 
-  <!-- Content -->
-
   <div class="container py-4">
 
     <div class="page-card">
@@ -149,7 +162,7 @@
       <div class="d-flex justify-content-between align-items-center mb-4">
 
         <h3 class="mb-0">
-          Total Users ({{ filteredUsers.length }})
+          Total Users ({{ totalUsers }})
         </h3>
 
         <input
@@ -158,6 +171,7 @@
           style="max-width:300px"
           placeholder="Search user..."
           v-model="search"
+          @keyup.enter="searchUsers"
         >
 
       </div>
@@ -182,7 +196,7 @@
           <tbody>
 
             <tr
-              v-for="user in filteredUsers"
+              v-for="user in users"
               :key="user._id"
             >
 
@@ -191,7 +205,7 @@
                 <div class="d-flex align-items-center">
 
                   <div class="avatar me-3">
-                    {{ user.name.charAt(0).toUpperCase() }}
+                    {{ user.name ? user.name.charAt(0).toUpperCase() : 'U' }}
                   </div>
 
                   <div>
@@ -202,13 +216,9 @@
 
               </td>
 
-              <td>
-                {{ user.mobile }}
-              </td>
+              <td>{{ user.mobile }}</td>
 
-              <td>
-                {{ user.location }}
-              </td>
+              <td>{{ user.location }}</td>
 
               <td>
 
@@ -245,9 +255,71 @@
 
             </tr>
 
+            <tr v-if="users.length === 0">
+
+              <td colspan="6" class="text-center py-4">
+                No Users Found
+              </td>
+
+            </tr>
+
           </tbody>
 
         </table>
+
+      </div>
+
+      <div class="d-flex justify-content-between align-items-center mt-4">
+
+        <div>
+          Page {{ page }} of {{ totalPages }}
+        </div>
+
+        <nav v-if="totalPages > 1">
+
+          <ul class="pagination mb-0">
+
+            <li
+              class="page-item"
+              :class="{ disabled: page === 1 }"
+            >
+              <a
+                class="page-link"
+                :href="getPageUrl(page - 1)"
+              >
+                Previous
+              </a>
+            </li>
+
+            <li
+              v-for="p in visiblePages"
+              :key="p"
+              class="page-item"
+              :class="{ active: p === page }"
+            >
+              <a
+                class="page-link"
+                :href="getPageUrl(p)"
+              >
+                {{ p }}
+              </a>
+            </li>
+
+            <li
+              class="page-item"
+              :class="{ disabled: page === totalPages }"
+            >
+              <a
+                class="page-link"
+                :href="getPageUrl(page + 1)"
+              >
+                Next
+              </a>
+            </li>
+
+          </ul>
+
+        </nav>
 
       </div>
 
@@ -264,24 +336,31 @@ new Vue({
   el:"#app",
 
   data:{
-    search:"",
-
-    users: <%- JSON.stringify(users) %>
+    search:'<%= search %>',
+    page:<%= page %>,
+    totalPages:<%= totalPages %>,
+    totalUsers:<%= totalUsers %>,
+    users:<%- JSON.stringify(users) %>
   },
 
   computed:{
 
-    filteredUsers(){
+    visiblePages(){
 
-      return this.users.filter(user => {
+      let start = Math.max(1, this.page - 2);
+      let end = Math.min(this.totalPages, start + 4);
 
-        return (
-          user.name?.toLowerCase().includes(this.search.toLowerCase()) ||
-          user.mobile?.includes(this.search)
-        );
+      if(end - start < 4){
+        start = Math.max(1, end - 4);
+      }
 
-      });
+      let pages = [];
 
+      for(let i = start; i <= end; i++){
+        pages.push(i);
+      }
+
+      return pages;
     }
 
   },
@@ -290,7 +369,21 @@ new Vue({
 
     formatDate(date){
 
-      return new Date(date).toLocaleDateString();
+      return new Date(date)
+        .toLocaleDateString();
+
+    },
+
+    searchUsers(){
+
+      window.location.href =
+        `/admin/users?page=1&search=${encodeURIComponent(this.search)}`;
+
+    },
+
+    getPageUrl(page){
+
+      return `/admin/users?page=${page}&search=${encodeURIComponent(this.search)}`;
 
     },
 
@@ -298,25 +391,39 @@ new Vue({
 
       alert(
         "Name: " + user.name +
-        "\nMobile: " + user.mobile
+        "\nMobile: " + user.mobile +
+        "\nLocation: " + user.location
       );
 
     },
 
     async deleteUser(id){
 
-      if(!confirm("Delete this user?")) return;
+      if(!confirm("Delete this user?")){
+        return;
+      }
 
       try{
 
-        await fetch(`/admin/users/${id}`,{
-          method:"DELETE"
-        });
+        const response = await fetch(
+          `/admin/users/${id}`,
+          {
+            method:"DELETE"
+          }
+        );
 
-        this.users =
-          this.users.filter(u => u._id !== id);
+        if(response.ok){
 
-      }catch(err){
+          this.users =
+            this.users.filter(
+              u => u._id !== id
+            );
+
+          this.totalUsers--;
+
+        }
+
+      }catch(error){
 
         alert("Delete failed");
 
@@ -333,3 +440,4 @@ new Vue({
 </body>
 
 </html>
+
