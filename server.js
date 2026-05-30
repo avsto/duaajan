@@ -6,6 +6,7 @@ const express = require("express");
 const connectDB = require("./config/db");
 const cors = require("cors");
 const session = require("express-session");
+const { MongoStore } = require("connect-mongo");
 
 const http = require("http");
 const { Server } = require("socket.io");
@@ -45,15 +46,27 @@ app.use(
   })
 );
 
+// =========================
+// SESSION
+// =========================
+
 app.use(
   session({
-    secret: process.env.JWT_SECRET,
+    secret: process.env.JWT_SECRET || "duaajan-secret-key",
+
     resave: false,
+
     saveUninitialized: false,
 
+    store: MongoStore.create({
+      mongoUrl: process.env.MONGO_URL,
+      collectionName: "sessions",
+    }),
+
     cookie: {
-      maxAge: 1000 * 60 * 60 * 24 * 7, // 7 days
+      maxAge: 1000 * 60 * 60 * 24, // 1 day
       httpOnly: true,
+      secure: false,
     },
   })
 );
