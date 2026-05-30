@@ -4,6 +4,7 @@ const jwt = require("jsonwebtoken");
 const upload = require("../middleware/upload");
 const User = require("../models/User");
 const auth = require("../middleware/auth");
+const axios = require("axios");
 router.post(
   "/register",
   upload.fields([
