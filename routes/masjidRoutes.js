@@ -56,19 +56,9 @@ router.post("/live-start", auth, async (req, res) => {
       // VALIDATION
       // ==================================
 
-      const validPrayers = [
-        "fajr",
-        "zuhr",
-        "asr",
-        "maghrib",
-        "isha",
-      ];
+      const validPrayers = ["fajr", "zuhr", "asr", "maghrib", "isha"];
 
-      if (
-        !prayerType ||
-        !validPrayers.includes(prayerType)
-      ) {
-
+      if (!prayerType || !validPrayers.includes(prayerType)) {
         return res.status(400).json({
           success: false,
           message: "Invalid prayer type",
@@ -82,15 +72,10 @@ router.post("/live-start", auth, async (req, res) => {
       const users = await User.find({
         role: "user",
         selectedMasjid: masjidId, [`prayers.${prayerType}`]: true,
-        fcmToken: {
-          $ne: null,
-        },
+        fcmToken: {$ne: null},
       });
 
-      console.log(
-        "Users Found:",
-        users.length,
-      );
+      console.log("Users Found:", users.length);
 
       // ==================================
       // SEND PUSH

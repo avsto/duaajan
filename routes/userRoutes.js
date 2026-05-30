@@ -11,34 +11,33 @@ const User = require("../models/User");
 // ======================================
 
 router.post("/select-masjid", auth, async (req, res) => {
-    try {
-      const { masjidId } = req.body;
+  try {
+    const { masjidId } = req.body;
 
-      const masjid = await User.findOne({ _id: masjidId, role: "masjid",});
+    const masjid = await User.findOne({ _id: masjidId, role: "masjid" });
 
-      if (!masjid) {
-        return res.status(404).json({
-          success: false,
-          message: "Masjid not found",
-        });
-      }
-
-      req.user.selectedMasjid = masjidId;
-
-      await req.user.save();
-
-      res.json({
-        success: true,
-        message: "Masjid selected successfully",
-      });
-    } catch (error) {
-      res.status(500).json({
+    if (!masjid) {
+      return res.status(404).json({
         success: false,
-        message: error.message,
+        message: "Masjid not found",
       });
     }
-  },
-);
+
+    req.user.selectedMasjid = masjidId;
+
+    await req.user.save();
+
+    res.json({
+      success: true,
+      message: "Masjid selected successfully",
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+});
 
 router.post("/update-prayer", auth, async (req, res) => {
   try {
@@ -46,7 +45,7 @@ router.post("/update-prayer", auth, async (req, res) => {
 
     // only masjid
 
-    if (req.user.role !== "user") {
+    if (req.user.role === "user") {
       return res.status(403).json({
         success: false,
         message: "Only masjid allowed",
@@ -60,7 +59,6 @@ router.post("/update-prayer", auth, async (req, res) => {
     if (!validPrayers.includes(prayer)) {
       return res.status(400).json({
         success: false,
-
         message: "Invalid prayer",
       });
     }
