@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>Masjids - DuaAjan Admin</title>
+
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+
+  <script src="https://cdn.jsdelivr.net/npm/vue@2/dist/vue.js"></script>
+
+  <style>
+
+    body{
+      background:#0f172a;
+      color:#fff;
+      margin:0;
+      font-family:Arial,sans-serif;
+    }
+
+    .topbar{
+      background:#111827;
+      padding:20px 30px;
+      border-bottom:1px solid rgba(255,255,255,.08);
+    }
+
+    .brand{
+      font-size:24px;
+      font-weight:700;
+    }
+
+    .content-card{
+      background:#111827;
+      border-radius:24px;
+      padding:25px;
+      margin-top:30px;
+    }
+
+    .search-box{
+      background:#1e293b;
+      border:none;
+      color:#fff;
+      height:50px;
+      border-radius:14px;
+    }
+
+    .search-box:focus{
+      background:#1e293b;
+      color:#fff;
+      box-shadow:none;
+    }
+
+    .table{
+      color:white;
+      margin-bottom:0;
+    }
+
+    .table th{
+      border:none;
+      color:#cbd5e1;
+      background:#1e293b;
+      padding:16px;
+    }
+
+    .table td{
+      border-color:rgba(255,255,255,.05);
+      padding:16px;
+      vertical-align:middle;
+    }
+
+    .masjid-avatar{
+      width:50px;
+      height:50px;
+      border-radius:14px;
+      background:#1e293b;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      font-size:20px;
+      color:#60a5fa;
+    }
+
+    .badge-approved{
+      background:#10b981;
+    }
+
+    .badge-pending{
+      background:#f59e0b;
+    }
+
+    .badge-rejected{
+      background:#ef4444;
+    }
+
+    .badge-live{
+      background:#22c55e;
+    }
+
+    .badge-offline{
+      background:#64748b;
+    }
+
+    .btn-action{
+      border:none;
+      border-radius:10px;
+      padding:7px 12px;
+      color:white;
+      margin-right:5px;
+    }
+
+    .btn-view{
+      background:#3b82f6;
+    }
+
+    .btn-approve{
+      background:#10b981;
+    }
+
+    .btn-reject{
+      background:#ef4444;
+    }
+
+  </style>
+
+</head>
+
+<body>
+
+<div id="app">
+
+  <div class="topbar">
+
+    <div class="d-flex justify-content-between align-items-center">
+
+      <div class="brand">
+        <i class="fa-solid fa-mosque me-2"></i>
+        Masjid Management
+      </div>
+
+      <a href="/admin/dashboard" class="btn btn-light">
+        Dashboard
+      </a>
+
+    </div>
+
+  </div>
+
+  <div class="container py-4">
+
+    <div class="content-card">
+
+      <div class="d-flex justify-content-between align-items-center mb-4">
+
+        <h3 class="mb-0">
+          Registered Masjids ({{ filteredMasjids.length }})
+        </h3>
+
+        <input
+          type="text"
+          class="form-control search-box"
+          style="max-width:300px"
+          placeholder="Search Masjid..."
+          v-model="search"
+        >
+
+      </div>
+
+      <div class="table-responsive">
+
+        <table class="table">
+
+          <thead>
+
+            <tr>
+              <th>Masjid</th>
+              <th>Imam</th>
+              <th>Mobile</th>
+              <th>Status</th>
+              <th>Live</th>
+              <th>Address</th>
+              <th width="220">Action</th>
+            </tr>
+
+          </thead>
+
+          <tbody>
+
+            <tr
+              v-for="masjid in filteredMasjids"
+              :key="masjid._id"
+            >
+
+              <td>
+
+                <div class="d-flex align-items-center">
+
+                  <div class="masjid-avatar me-3">
+                    <i class="fa-solid fa-mosque"></i>
+                  </div>
+
+                  <div>
+
+                    <div class="fw-bold">
+                      {{ masjid.masjidName }}
+                    </div>
+
+                    <small class="text-secondary">
+                      {{ masjid.email }}
+                    </small>
+
+                  </div>
+
+                </div>
+
+              </td>
+
+              <td>
+                {{ masjid.imamName }}
+              </td>
+
+              <td>
+                {{ masjid.mobile }}
+              </td>
+
+              <td>
+
+                <span
+                  class="badge"
+                  :class="{
+                    'badge-approved': masjid.status==='approved',
+                    'badge-pending': masjid.status==='pending',
+                    'badge-rejected': masjid.status==='rejected'
+                  }"
+                >
+                  {{ masjid.status }}
+                </span>
+
+              </td>
+
+              <td>
+
+                <span
+                  class="badge"
+                  :class="masjid.isLive ? 'badge-live' : 'badge-offline'"
+                >
+                  {{ masjid.isLive ? 'LIVE' : 'OFFLINE' }}
+                </span>
+
+              </td>
+
+              <td>
+                {{ masjid.address }}
+              </td>
+
+              <td>
+
+                <button
+                  class="btn-action btn-view"
+                  @click="viewMasjid(masjid)"
+                >
+                  View
+                </button>
+
+                <button
+                  class="btn-action btn-approve"
+                  @click="updateStatus(masjid,'approved')"
+                  v-if="masjid.status !== 'approved'"
+                >
+                  Approve
+                </button>
+
+                <button
+                  class="btn-action btn-reject"
+                  @click="updateStatus(masjid,'rejected')"
+                  v-if="masjid.status !== 'rejected'"
+                >
+                  Reject
+                </button>
+
+              </td>
+
+            </tr>
+
+          </tbody>
+
+        </table>
+
+      </div>
+
+    </div>
+
+  </div>
+
+</div>
+
+<script>
+
+new Vue({
+
+  el:"#app",
+
+  data:{
+    search:"",
+    masjids:<%- JSON.stringify(masjids) %>
+  },
+
+  computed:{
+
+    filteredMasjids(){
+
+      return this.masjids.filter(m => {
+
+        return (
+          m.masjidName?.toLowerCase().includes(this.search.toLowerCase()) ||
+          m.mobile?.includes(this.search) ||
+          m.imamName?.toLowerCase().includes(this.search.toLowerCase())
+        );
+
+      });
+
+    }
+
+  },
+
+  methods:{
+
+    viewMasjid(masjid){
+
+      alert(
+        "Masjid: " + masjid.masjidName +
+        "\nImam: " + masjid.imamName +
+        "\nMobile: " + masjid.mobile
+      );
+
+    },
+
+    async updateStatus(masjid,status){
+
+      try{
+
+        await fetch(
+          `/admin/masjids/${masjid._id}/status`,
+          {
+            method:"POST",
+            headers:{
+              "Content-Type":"application/json"
+            },
+            body:JSON.stringify({ status })
+          }
+        );
+
+        masjid.status = status;
+
+      }catch(err){
+
+        alert("Failed");
+
+      }
+
+    }
+
+  }
+
+});
+
+</script>
+
+</body>
+
+</html>
