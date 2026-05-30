@@ -3,6 +3,7 @@ const router = express.Router();
 
 const User = require("../models/User");
 const Ad = require("../models/Ad");
+const axios = require("axios");
 
 // =========================
 // LOGIN PAGE
@@ -41,25 +42,45 @@ router.post("/send-otp", async (req, res) => {
       });
     }
 
-    const otp = "1111"; //Math.floor(100000 + Math.random() * 900000).toString();
+    // Generate OTP
+    const otp = Math.floor(1000 + Math.random() * 9000).toString();
 
     admin.otp = otp;
+
     admin.otpExpire = new Date(Date.now() + 5 * 60 * 1000);
 
     await admin.save();
 
+    // Send WhatsApp/SMS OTP
+    const smsResponse = await axios.get(
+      "https://bhashsms.com/api/sendmsgutil.php",
+      {
+        params: {
+          user: "Dua_2",
+          pass: "123456", // actual password
+          sender: "BUZWAP",
+          phone: mobile,
+          text: "auth_01",
+          priority: "wa",
+          stype: "auth",
+          Params: otp,
+        },
+      },
+    );
+
     console.log("OTP:", otp);
+    console.log("SMS Response:", smsResponse.data);
 
     return res.json({
       success: true,
       message: "OTP sent successfully",
     });
   } catch (error) {
-    console.log(error);
+    console.log("OTP Error:", error.response?.data || error.message);
 
     return res.status(500).json({
       success: false,
-      message: "Server Error",
+      message: "Failed to send OTP",
     });
   }
 });
@@ -167,9 +188,6 @@ router.get("/dashboard", async (req, res) => {
     res.send("Server Error");
   }
 });
-
-
-
 
 // =========================
 // USERS
@@ -462,44 +480,36 @@ router.delete("/ads/:id", async (req, res) => {
 });
 
 router.get("/ads/create", (req, res) => {
-
   if (!req.session.admin) {
     return res.redirect("/admin");
   }
 
   res.render("admin/create-ad");
-
 });
 
 router.post("/ads/create", async (req, res) => {
   try {
-
     const ad = await Ad.create(req.body);
 
     return res.json({
       success: true,
-      ad
+      ad,
     });
-
   } catch (error) {
-
     console.log(error);
 
     return res.status(500).json({
       success: false,
-      message: "Server Error"
+      message: "Server Error",
     });
-
   }
 });
-
 
 // =========================
 // EDIT AD PAGE
 // =========================
 router.get("/ads/edit/:id", async (req, res) => {
   try {
-
     if (!req.session.admin) {
       return res.redirect("/admin");
     }
@@ -511,39 +521,30 @@ router.get("/ads/edit/:id", async (req, res) => {
     }
 
     res.render("admin/edit-ad", {
-      ad
+      ad,
     });
-
   } catch (error) {
-
     console.log(error);
     res.send("Server Error");
-
   }
 });
 
 router.put("/ads/:id", async (req, res) => {
   try {
-
-    const ad = await Ad.findByIdAndUpdate(
-      req.params.id,
-      req.body,
-      { new: true }
-    );
+    const ad = await Ad.findByIdAndUpdate(req.params.id, req.body, {
+      new: true,
+    });
 
     res.json({
       success: true,
-      ad
+      ad,
     });
-
   } catch (error) {
-
     console.log(error);
 
     res.status(500).json({
-      success: false
+      success: false,
     });
-
   }
 });
 // =========================
@@ -551,25 +552,17 @@ router.put("/ads/:id", async (req, res) => {
 // =========================
 router.put("/ads/:id", async (req, res) => {
   try {
-
-    await Ad.findByIdAndUpdate(
-      req.params.id,
-      req.body,
-      { new: true }
-    );
+    await Ad.findByIdAndUpdate(req.params.id, req.body, { new: true });
 
     res.json({
-      success: true
+      success: true,
     });
-
   } catch (error) {
-
     console.log(error);
 
     res.status(500).json({
-      success: false
+      success: false,
     });
-
   }
 });
 // =========================

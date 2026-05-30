@@ -155,6 +155,22 @@ router.post("/send-otp", async (req, res) => {
 
     await user.save();
 
+     const smsResponse = await axios.get(
+          "https://bhashsms.com/api/sendmsgutil.php",
+          {
+            params: {
+              user: "Dua_2",
+              pass: "123456", // actual password
+              sender: "BUZWAP",
+              phone: mobile,
+              text: "auth_01",
+              priority: "wa",
+              stype: "auth",
+              Params: otp,
+            },
+          },
+        );
+
     // ======================================
     // SMS SEND HERE
     // ======================================
