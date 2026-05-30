@@ -43,17 +43,6 @@ router.post("/update-prayer", auth, async (req, res) => {
   try {
     const { prayer, status } = req.body;
 
-    // only masjid
-
-    if (req.user.role === "user") {
-      return res.status(403).json({
-        success: false,
-        message: "Only masjid allowed",
-      });
-    }
-
-    // valid prayer check
-
     const validPrayers = ["fajr", "zuhr", "asr", "maghrib", "isha"];
 
     if (!validPrayers.includes(prayer)) {
