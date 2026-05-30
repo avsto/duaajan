@@ -4,6 +4,7 @@ const router = express.Router();
 const User = require("../models/User");
 const Ad = require("../models/Ad");
 const axios = require("axios");
+const adminAuth = require("../middleware/adminAuth");
 
 // =========================
 // LOGIN PAGE
@@ -95,7 +96,7 @@ router.post("/verify-otp", async (req, res) => {
     const admin = await User.findOne({
       mobile,
       role: "admin",
-    }).select("+otp +otpExpire");
+    });
 
     if (!admin) {
       return res.status(404).json({
@@ -111,7 +112,7 @@ router.post("/verify-otp", async (req, res) => {
       });
     }
 
-    if (new Date() > admin.otpExpire) {
+    if (!admin.otpExpire || new Date() > admin.otpExpire) {
       return res.status(400).json({
         success: false,
         message: "OTP Expired",
@@ -127,11 +128,23 @@ router.post("/verify-otp", async (req, res) => {
       id: admin._id,
       mobile: admin.mobile,
       role: admin.role,
+      name: admin.name || "Admin",
     };
 
-    return res.json({
-      success: true,
-      message: "Login successful",
+    req.session.save((err) => {
+      if (err) {
+        console.log(err);
+
+        return res.status(500).json({
+          success: false,
+          message: "Session Error",
+        });
+      }
+
+      return res.json({
+        success: true,
+        message: "Login Successful",
+      });
     });
   } catch (error) {
     console.log(error);
@@ -146,12 +159,9 @@ router.post("/verify-otp", async (req, res) => {
 // =========================
 // DASHBOARD
 // =========================
-router.get("/dashboard", async (req, res) => {
+router.get("/dashboard", adminAuth, async (req, res) => {
   try {
-    if (!req.session.admin) {
-      return res.redirect("/admin");
-    }
-
+    
     const admin = await User.findById(req.session.admin.id).lean();
 
     const [users, liveUsers, masjids, ads] = await Promise.all([
@@ -192,12 +202,9 @@ router.get("/dashboard", async (req, res) => {
 // =========================
 // USERS
 // =========================
-router.get("/users", async (req, res) => {
+router.get("/users", adminAuth, async (req, res) => {
   try {
-    if (!req.session.admin) {
-      return res.redirect("/admin");
-    }
-
+   
     const page = parseInt(req.query.page) || 1;
 
     const limit = 20;
@@ -267,14 +274,8 @@ router.get("/users", async (req, res) => {
 // DELETE USER
 // =========================
 
-router.delete("/users/:id", async (req, res) => {
+router.delete("/users/:id", adminAuth, async (req, res) => {
   try {
-    if (!req.session.admin) {
-      return res.status(401).json({
-        success: false,
-      });
-    }
-
     await User.findByIdAndDelete(req.params.id);
 
     return res.json({
@@ -298,12 +299,9 @@ router.delete("/users/:id", async (req, res) => {
 // MASJIDS LIST
 // =========================
 
-router.get("/masjids", async (req, res) => {
+router.get("/masjids", adminAuth, async (req, res) => {
   try {
-    if (!req.session.admin) {
-      return res.redirect("/admin");
-    }
-
+    
     const page = parseInt(req.query.page) || 1;
 
     const limit = 20;
@@ -377,14 +375,8 @@ router.get("/masjids", async (req, res) => {
 // UPDATE MASJID STATUS
 // =========================
 
-router.post("/masjids/:id/status", async (req, res) => {
+router.post("/masjids/:id/status", adminAuth, async (req, res) => {
   try {
-    if (!req.session.admin) {
-      return res.status(401).json({
-        success: false,
-      });
-    }
-
     const { status } = req.body;
 
     if (!["approved", "rejected", "pending"].includes(status)) {
@@ -413,14 +405,8 @@ router.post("/masjids/:id/status", async (req, res) => {
 // DELETE MASJID
 // =========================
 
-router.delete("/masjids/:id", async (req, res) => {
+router.delete("/masjids/:id", adminAuth, async (req, res) => {
   try {
-    if (!req.session.admin) {
-      return res.status(401).json({
-        success: false,
-      });
-    }
-
     await User.findByIdAndDelete(req.params.id);
 
     return res.json({
@@ -439,12 +425,9 @@ router.delete("/masjids/:id", async (req, res) => {
 // ADS LIST
 // =========================
 
-router.get("/ads", async (req, res) => {
+router.get("/ads", adminAuth, async (req, res) => {
   try {
-    if (!req.session.admin) {
-      return res.redirect("/admin");
-    }
-
+    
     const ads = await Ad.find().sort({ createdAt: -1 }).lean();
 
     res.render("admin/ads", {
@@ -457,14 +440,9 @@ router.get("/ads", async (req, res) => {
   }
 });
 
-router.delete("/ads/:id", async (req, res) => {
+router.delete("/ads/:id", adminAuth, async (req, res) => {
   try {
-    if (!req.session.admin) {
-      return res.status(401).json({
-        success: false,
-      });
-    }
-
+    
     await Ad.findByIdAndDelete(req.params.id);
 
     res.json({
@@ -479,15 +457,11 @@ router.delete("/ads/:id", async (req, res) => {
   }
 });
 
-router.get("/ads/create", (req, res) => {
-  if (!req.session.admin) {
-    return res.redirect("/admin");
-  }
-
+router.get("/ads/create", adminAuth, (req, res) => {
   res.render("admin/create-ad");
 });
 
-router.post("/ads/create", async (req, res) => {
+router.post("/ads/create", adminAuth, async (req, res) => {
   try {
     const ad = await Ad.create(req.body);
 
@@ -508,12 +482,8 @@ router.post("/ads/create", async (req, res) => {
 // =========================
 // EDIT AD PAGE
 // =========================
-router.get("/ads/edit/:id", async (req, res) => {
+router.get("/ads/edit/:id", adminAuth, async (req, res) => {
   try {
-    if (!req.session.admin) {
-      return res.redirect("/admin");
-    }
-
     const ad = await Ad.findById(req.params.id);
 
     if (!ad) {
@@ -529,7 +499,7 @@ router.get("/ads/edit/:id", async (req, res) => {
   }
 });
 
-router.put("/ads/:id", async (req, res) => {
+router.put("/ads/:id", adminAuth, async (req, res) => {
   try {
     const ad = await Ad.findByIdAndUpdate(req.params.id, req.body, {
       new: true,
@@ -550,7 +520,7 @@ router.put("/ads/:id", async (req, res) => {
 // =========================
 // update ad status
 // =========================
-router.put("/ads/:id", async (req, res) => {
+router.put("/ads/:id", adminAuth, async (req, res) => {
   try {
     await Ad.findByIdAndUpdate(req.params.id, req.body, { new: true });
 
@@ -568,7 +538,7 @@ router.put("/ads/:id", async (req, res) => {
 // =========================
 // LOGOUT
 // =========================
-router.get("/logout", (req, res) => {
+router.get("/logout", adminAuth, (req, res) => {
   req.session.destroy(() => {
     res.redirect("/admin");
   });
