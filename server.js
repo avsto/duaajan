@@ -107,9 +107,7 @@ app.use("/admin",require("./routes/adminRoutes"));
 // HOME ROUTE
 // ======================================
 
-app.get("/", (req, res) => {
-  res.send("🚀 DuaAjan API Running");
-});
+app.use("/", require("./routes/frontedRoutes"));
 
 // ======================================
 // START SERVER

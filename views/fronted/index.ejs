@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>DuaAjan - Live Azaan Broadcast</title>
+
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+<style>
+*{
+    margin:0;
+    padding:0;
+    box-sizing:border-box;
+    font-family:'Poppins',sans-serif;
+}
+
+body{
+    background:#f4f7fb;
+}
+
+.navbar{
+    background:#0F766E;
+    color:#fff;
+    padding:15px 40px;
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+}
+
+.logo{
+    font-size:24px;
+    font-weight:700;
+}
+
+.hero{
+    min-height:90vh;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding:40px;
+}
+
+.hero-content{
+    max-width:1200px;
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:50px;
+    align-items:center;
+}
+
+.hero-text h1{
+    font-size:52px;
+    color:#0F172A;
+    margin-bottom:20px;
+}
+
+.hero-text p{
+    font-size:18px;
+    color:#64748B;
+    line-height:1.8;
+}
+
+.btn{
+    display:inline-block;
+    margin-top:25px;
+    background:#0F766E;
+    color:#fff;
+    padding:15px 30px;
+    text-decoration:none;
+    border-radius:10px;
+    font-weight:600;
+}
+
+.card{
+    background:#fff;
+    border-radius:20px;
+    padding:30px;
+    box-shadow:0 15px 40px rgba(0,0,0,0.08);
+}
+
+.stats{
+    display:grid;
+    grid-template-columns:repeat(2,1fr);
+    gap:20px;
+}
+
+.stat{
+    background:#F8FAFC;
+    padding:20px;
+    border-radius:15px;
+    text-align:center;
+}
+
+.stat h2{
+    color:#0F766E;
+}
+
+.features{
+    padding:80px 40px;
+}
+
+.features h2{
+    text-align:center;
+    margin-bottom:40px;
+    color:#0F172A;
+}
+
+.feature-grid{
+    display:grid;
+    grid-template-columns:repeat(auto-fit,minmax(250px,1fr));
+    gap:25px;
+}
+
+.feature{
+    background:#fff;
+    padding:25px;
+    border-radius:15px;
+    box-shadow:0 10px 30px rgba(0,0,0,.05);
+}
+
+.footer{
+    background:#0F172A;
+    color:#fff;
+    text-align:center;
+    padding:20px;
+}
+
+@media(max-width:768px){
+.hero-content{
+    grid-template-columns:1fr;
+}
+.hero-text h1{
+    font-size:36px;
+}
+}
+</style>
+</head>
+<body>
+
+<nav class="navbar">
+    <div class="logo">DuaAjan</div>
+</nav>
+
+<section class="hero">
+    <div class="hero-content">
+
+        <div class="hero-text">
+            <h1>Live Azaan Broadcast Platform</h1>
+
+            <p>
+                Connect mosques and listeners with real-time
+                Azaan broadcasting. Listen live from anywhere
+                and stay connected to your local Masjid.
+            </p>
+
+            <a href="/admin" class="btn">
+                Admin Login
+            </a>
+        </div>
+
+        <div class="card">
+
+            <div class="stats">
+
+                <div class="stat">
+                    <h2>500+</h2>
+                    <p>Masjids</p>
+                </div>
+
+                <div class="stat">
+                    <h2>10K+</h2>
+                    <p>Listeners</p>
+                </div>
+
+                <div class="stat">
+                    <h2>24x7</h2>
+                    <p>Live Audio</p>
+                </div>
+
+                <div class="stat">
+                    <h2>99.9%</h2>
+                    <p>Uptime</p>
+                </div>
+
+            </div>
+
+        </div>
+
+    </div>
+</section>
+
+<section class="features">
+
+    <h2>Features</h2>
+
+    <div class="feature-grid">
+
+        <div class="feature">
+            <h3>🔊 Live Broadcast</h3>
+            <p>Real-time audio streaming from mosques.</p>
+        </div>
+
+        <div class="feature">
+            <h3>📱 Mobile App</h3>
+            <p>Listen from Android and iOS devices.</p>
+        </div>
+
+        <div class="feature">
+            <h3>🕌 Mosque Management</h3>
+            <p>Manage multiple mosque broadcasts.</p>
+        </div>
+
+        <div class="feature">
+            <h3>🔔 Notifications</h3>
+            <p>Receive instant live azaan alerts.</p>
+        </div>
+
+    </div>
+
+</section>
+
+<footer class="footer">
+    © 2026 DuaAjan. All Rights Reserved.
+</footer>
+
+</body>
+</html>
