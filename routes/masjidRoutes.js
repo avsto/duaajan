@@ -9,6 +9,8 @@ const User = require("../models/User");
 const admin = require("firebase-admin");
 
 const upload = require("../middleware/upload");
+
+const LiveReport = require("../models/LiveReport");
 // ======================================
 // GET MASJID LIST
 // ======================================
@@ -50,7 +52,7 @@ router.post("/live-start", auth, async (req, res) => {
     // VALIDATION
     // ==================================
 
-    const validPrayers = ["fajr", "zuhr", "asr", "maghrib", "isha"];
+    const validPrayers = ["fajr", "zuhr", "asr", "maghrib", "isha", "general"];
 
     if (!prayerType || !validPrayers.includes(prayerType)) {
       return res.status(400).json({
@@ -71,6 +73,17 @@ router.post("/live-start", auth, async (req, res) => {
     });
 
     console.log("Users Found:", users.length);
+
+    const report = await LiveReport.create({
+      masjidId,
+      prayerType,
+      startTime: new Date(),
+    });
+
+    await User.findByIdAndUpdate(masjidId, {
+      isLive: true,
+      currentLiveReport: report._id,
+    });
 
     // ==================================
     // SEND PUSH
@@ -143,13 +156,11 @@ router.post(
   async (req, res) => {
     try {
       const updateData = {
-     
         address: req.body.address,
         pincode: req.body.pincode,
         committeeMember1: req.body.committeeMember1,
         committeeMember2: req.body.committeeMember2,
       };
-
 
       if (req.files?.document?.[0]) {
         updateData.document = req.files.document[0].filename;

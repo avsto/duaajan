@@ -137,6 +137,12 @@ const userSchema = new mongoose.Schema(
       default: false,
     },
 
+    currentLiveReport: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "LiveReport",
+      default: null,
+    },
+
     fcmToken: {
       type: String,
       default: null,
@@ -174,6 +180,10 @@ const userSchema = new mongoose.Schema(
       isha: {
         type: Boolean,
         default: false,
+      },
+      general: {
+        type: Boolean,
+        default: true,
       },
     },
   },
