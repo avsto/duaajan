@@ -1,0 +1,455 @@
+
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>
+        Ajan History - DuaAjan Admin
+    </title>
+
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+
+    <link rel="stylesheet"
+        href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+
+    <style>
+        body {
+            margin: 0;
+            background: #0f172a;
+            color: #fff;
+            font-family: Arial, sans-serif;
+        }
+
+        .topbar {
+            background: #111827;
+            padding: 20px 30px;
+            border-bottom: 1px solid rgba(255, 255, 255, .08);
+        }
+
+        .brand {
+            font-size: 24px;
+            font-weight: 700;
+        }
+
+        .page-card {
+            background: #111827;
+            border-radius: 24px;
+            padding: 25px;
+            margin-top: 25px;
+            border: 1px solid rgba(255, 255, 255, .05);
+        }
+
+        .table {
+            color: #fff;
+            margin-bottom: 0;
+        }
+
+        .table thead {
+            background: #1e293b;
+        }
+
+        .table th {
+            border: none;
+            color: #cbd5e1;
+            padding: 16px;
+        }
+
+        .table td {
+            border-color: rgba(255, 255, 255, .05);
+            padding: 16px;
+            vertical-align: middle;
+        }
+
+        .stats-card {
+            background: #111827;
+            border-radius: 20px;
+            padding: 25px;
+            text-align: center;
+            border: 1px solid rgba(255, 255, 255, .05);
+            height: 100%;
+        }
+
+        .stats-card h2 {
+            margin: 0;
+            font-weight: bold;
+        }
+
+        .pagination .page-link {
+            background: #1e293b;
+            border-color: #334155;
+            color: #fff;
+        }
+
+        .pagination .active .page-link {
+            background: #3b82f6;
+            border-color: #3b82f6;
+        }
+
+        .badge-live {
+            background: #10b981;
+        }
+
+        .badge-completed {
+            background: #64748b;
+        }
+
+        .badge-prayer {
+            background: #3b82f6;
+        }
+
+        .badge-listener {
+            background: #06b6d4;
+        }
+
+        .empty-box {
+            padding: 60px;
+            text-align: center;
+        }
+
+        .empty-box i {
+            font-size: 60px;
+            color: #64748b;
+            margin-bottom: 15px;
+        }
+
+        .masjid-info {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .masjid-info h3 {
+            margin-bottom: 5px;
+        }
+
+        .text-secondary-custom {
+            color: #94a3b8;
+        }
+    </style>
+
+</head>
+
+<body>
+
+    <!-- TOPBAR -->
+
+    <div class="topbar">
+
+        <div class="d-flex justify-content-between align-items-center">
+
+            <div class="brand">
+                <i class="fa-solid fa-clock-rotate-left me-2"></i>
+                Ajan History
+            </div>
+
+            <a href="/admin/masjids" class="btn btn-light">
+                Back To Masjids
+            </a>
+
+        </div>
+
+    </div>
+
+    <div class="container py-4">
+
+        <!-- MASJID INFO -->
+
+        <div class="page-card">
+
+            <div class="masjid-info">
+
+                <div>
+
+                    <h3>
+                        <i class="fa-solid fa-mosque me-2"></i>
+                        <%= masjid.masjidName %>
+                    </h3>
+
+                    <div class="text-secondary-custom">
+                        <%= masjid.address || "No Address Available" %>
+                    </div>
+
+                </div>
+
+                <div class="text-end">
+
+                    <h2 class="text-success">
+                        <%= totalRecords %>
+                    </h2>
+
+                    <small class="text-secondary-custom">
+                        Total Broadcasts
+                    </small>
+
+                </div>
+
+            </div>
+
+        </div>
+
+        <!-- STATS -->
+
+        <div class="row">
+
+            <div class="col-md-4">
+
+                <div class="stats-card">
+
+                    <h2 class="text-info">
+                        <%= totalRecords %>
+                    </h2>
+
+                    <div class="text-secondary-custom">
+                        Total Reports
+                    </div>
+
+                </div>
+
+            </div>
+
+            <div class="col-md-4">
+
+                <div class="stats-card">
+
+                    <h2 class="text-warning">
+                        <%= currentPage %>
+                    </h2>
+
+                    <div class="text-secondary-custom">
+                        Current Page
+                    </div>
+
+                </div>
+
+            </div>
+
+            <div class="col-md-4">
+
+                <div class="stats-card">
+
+                    <h2 class="text-success">
+                        <%= totalPages %>
+                    </h2>
+
+                    <div class="text-secondary-custom">
+                        Total Pages
+                    </div>
+
+                </div>
+
+            </div>
+
+        </div>
+
+        <!-- TABLE -->
+
+        <div class="page-card">
+
+            <div class="table-responsive">
+
+                <table class="table">
+
+                    <thead>
+
+                        <tr>
+                            <th>#</th>
+                            <th>Prayer Type</th>
+                            <th>Start Time</th>
+                            <th>End Time</th>
+                            <th>Duration</th>
+                            <th>Listeners</th>
+                            <th>Status</th>
+                        </tr>
+
+                    </thead>
+
+                    <tbody>
+
+                        <% if(ajanHistory.length > 0){ %>
+
+                            <% ajanHistory.forEach((item,index)=>{ %>
+
+                                <tr>
+
+                                    <td>
+                                        <%= ((currentPage - 1) * 20) + index + 1 %>
+                                    </td>
+
+                                    <td>
+
+                                        <span class="badge badge-prayer">
+
+                                            <%= item.prayerType || item.liveType || "General" %>
+
+                                        </span>
+
+                                    </td>
+
+                                    <td>
+
+                                        <%= item.startTime
+                                            ? new Date(item.startTime).toLocaleString()
+                                            : "-" %>
+
+                                    </td>
+
+                                    <td>
+
+                                        <%= item.endTime
+                                            ? new Date(item.endTime).toLocaleString()
+                                            : "-" %>
+
+                                    </td>
+
+                                    <td>
+
+                                        <% if(item.startTime && item.endTime){ %>
+
+                                            <%= Math.floor(
+                                            (new Date(item.endTime) -
+                                            new Date(item.startTime))
+                                            / 60000
+                                            ) %> min
+
+                                        <% } else { %>
+
+                                            -
+
+                                        <% } %>
+
+                                    </td>
+
+                                    <td>
+
+                                        <span class="badge badge-listener">
+
+                                            <%= item.totalListeners || 0 %>
+
+                                        </span>
+
+                                    </td>
+
+                                    <td>
+
+                                        <% if(item.isLive){ %>
+
+                                            <span class="badge badge-live">
+                                                LIVE
+                                            </span>
+
+                                        <% } else { %>
+
+                                            <span class="badge badge-completed">
+                                                COMPLETED
+                                            </span>
+
+                                        <% } %>
+
+                                    </td>
+
+                                </tr>
+
+                            <% }) %>
+
+                        <% } else { %>
+
+                            <tr>
+
+                                <td colspan="7">
+
+                                    <div class="empty-box">
+
+                                        <i class="fa-solid fa-clock-rotate-left"></i>
+
+                                        <h4>
+                                            No Ajan History Found
+                                        </h4>
+
+                                    </div>
+
+                                </td>
+
+                            </tr>
+
+                        <% } %>
+
+                    </tbody>
+
+                </table>
+
+            </div>
+
+        </div>
+
+        <!-- PAGINATION -->
+
+        <% if(totalPages > 1){ %>
+
+            <div class="d-flex justify-content-between align-items-center mt-4">
+
+                <div>
+                    Page <%= currentPage %> of <%= totalPages %>
+                </div>
+
+                <ul class="pagination mb-0">
+
+                    <% if(currentPage > 1){ %>
+
+                        <li class="page-item">
+
+                            <a class="page-link"
+                                href="/admin/masjids/<%= masjid._id %>/ajan-history?page=<%= currentPage - 1 %>">
+
+                                Previous
+
+                            </a>
+
+                        </li>
+
+                    <% } %>
+
+                    <% for(let i=1;i<=totalPages;i++){ %>
+
+                        <li class="page-item <%= currentPage === i ? 'active' : '' %>">
+
+                            <a class="page-link"
+                                href="/admin/masjids/<%= masjid._id %>/ajan-history?page=<%= i %>">
+
+                                <%= i %>
+
+                            </a>
+
+                        </li>
+
+                    <% } %>
+
+                    <% if(currentPage < totalPages){ %>
+
+                        <li class="page-item">
+
+                            <a class="page-link"
+                                href="/admin/masjids/<%= masjid._id %>/ajan-history?page=<%= currentPage + 1 %>">
+
+                                Next
+
+                            </a>
+
+                        </li>
+
+                    <% } %>
+
+                </ul>
+
+            </div>
+
+        <% } %>
+
+    </div>
+
+</body>
+
+</html>

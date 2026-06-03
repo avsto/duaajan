@@ -5,7 +5,7 @@ const User = require("../models/User");
 const Ad = require("../models/Ad");
 const axios = require("axios");
 const adminAuth = require("../middleware/adminAuth");
-
+const LiveReport = require("../models/LiveReport");
 // =========================
 // LOGIN PAGE
 // =========================
@@ -161,7 +161,6 @@ router.post("/verify-otp", async (req, res) => {
 // =========================
 router.get("/dashboard", adminAuth, async (req, res) => {
   try {
-    
     const admin = await User.findById(req.session.admin.id).lean();
 
     const [users, liveUsers, masjids, ads] = await Promise.all([
@@ -204,7 +203,6 @@ router.get("/dashboard", adminAuth, async (req, res) => {
 // =========================
 router.get("/users", adminAuth, async (req, res) => {
   try {
-   
     const page = parseInt(req.query.page) || 1;
 
     const limit = 20;
@@ -301,7 +299,6 @@ router.delete("/users/:id", adminAuth, async (req, res) => {
 
 router.get("/masjids", adminAuth, async (req, res) => {
   try {
-    
     const page = parseInt(req.query.page) || 1;
 
     const limit = 20;
@@ -427,7 +424,6 @@ router.delete("/masjids/:id", adminAuth, async (req, res) => {
 
 router.get("/ads", adminAuth, async (req, res) => {
   try {
-    
     const ads = await Ad.find().sort({ createdAt: -1 }).lean();
 
     res.render("admin/ads", {
@@ -442,7 +438,6 @@ router.get("/ads", adminAuth, async (req, res) => {
 
 router.delete("/ads/:id", adminAuth, async (req, res) => {
   try {
-    
     await Ad.findByIdAndDelete(req.params.id);
 
     res.json({
@@ -533,6 +528,52 @@ router.put("/ads/:id", adminAuth, async (req, res) => {
     res.status(500).json({
       success: false,
     });
+  }
+});
+
+// =========================
+// AJAN HISTORY
+// =========================
+router.get("/masjids/:id/ajan-history", adminAuth, async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+
+    const limit = 20;
+
+    const skip = (page - 1) * limit;
+
+    const masjid = await User.findById(req.params.id);
+
+    if (!masjid) {
+      return res.send("Masjid not found");
+    }
+
+    const totalRecords = await LiveReport.countDocuments({
+      masjidId: req.params.id,
+    });
+
+    const ajanHistory = await LiveReport.find({
+      masjidId: req.params.id,
+    })
+      .sort({
+        createdAt: -1,
+      })
+      .skip(skip)
+      .limit(limit);
+
+    const totalPages = Math.ceil(totalRecords / limit);
+
+    res.render("admin/ajan-history", {
+      masjid,
+      ajanHistory,
+      currentPage: page,
+      totalPages,
+      totalRecords,
+    });
+  } catch (error) {
+    console.log(error);
+
+    res.status(500).send(error.message);
   }
 });
 // =========================
