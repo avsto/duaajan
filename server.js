@@ -43,7 +43,7 @@ app.use(express.json());
 app.use(
   express.urlencoded({
     extended: true,
-  })
+  }),
 );
 
 // =========================
@@ -68,7 +68,7 @@ app.use(
       httpOnly: true,
       secure: false,
     },
-  })
+  }),
 );
 
 // ======================================
@@ -77,31 +77,26 @@ app.use(
 
 app.set("view engine", "ejs");
 
-app.set(
-  "views",
-  path.join(__dirname, "views")
-);
+app.set("views", path.join(__dirname, "views"));
 
-app.use(
-  express.static(
-    path.join(__dirname, "public")
-  )
-);
+app.use(express.static(path.join(__dirname, "public")));
+
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 // ======================================
 // API ROUTES
 // ======================================
 
-app.use("/api/auth",require("./routes/authRoutes"));
+app.use("/api/auth", require("./routes/authRoutes"));
 app.use("/api/user", require("./routes/userRoutes"));
-app.use("/api/masjid",require("./routes/masjidRoutes"));
-app.use("/api/donate",require("./routes/donateRoutes"));
+app.use("/api/masjid", require("./routes/masjidRoutes"));
+app.use("/api/donate", require("./routes/donateRoutes"));
 app.use("/api/ads", require("./routes/adRoutes"));
 // ======================================
 // ADMIN ROUTES
 // ======================================
 
-app.use("/admin",require("./routes/adminRoutes"));
+app.use("/admin", require("./routes/adminRoutes"));
 
 // ======================================
 // HOME ROUTE
