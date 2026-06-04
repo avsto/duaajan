@@ -3,6 +3,7 @@
 const INSTANCE_ID = Math.random().toString(36).substring(2, 8);
 
 console.log("INSTANCE:", INSTANCE_ID);
+
 console.log("HOSTNAME:", process.env.HOSTNAME);
 
 const broadcasters = {};
