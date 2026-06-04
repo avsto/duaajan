@@ -45,7 +45,6 @@ router.get("/list", auth, async (req, res) => {
 router.post("/live-start", auth, async (req, res) => {
   try {
     const masjidId = req.user._id;
-
     const { prayerType } = req.body;
 
     // ==================================
@@ -61,6 +60,12 @@ router.post("/live-start", auth, async (req, res) => {
       });
     }
 
+    console.log("=================================");
+    console.log("Live Start Request");
+    console.log("Masjid ID:", masjidId);
+    console.log("Prayer Type:", prayerType);
+    console.log("=================================");
+
     // ==================================
     // FIND USERS
     // ==================================
@@ -69,10 +74,27 @@ router.post("/live-start", auth, async (req, res) => {
       role: "user",
       selectedMasjid: masjidId,
       [`prayers.${prayerType}`]: true,
-      fcmToken: { $ne: null },
+      fcmToken: {
+        $exists: true,
+        $ne: null,
+        $ne: "",
+      },
     });
 
     console.log("Users Found:", users.length);
+
+    users.forEach((user) => {
+      console.log({
+        mobile: user.mobile,
+        token: user.fcmToken
+          ? user.fcmToken.substring(0, 30) + "..."
+          : "No Token",
+      });
+    });
+
+    // ==================================
+    // CREATE LIVE REPORT
+    // ==================================
 
     const report = await LiveReport.create({
       masjidId,
@@ -80,36 +102,56 @@ router.post("/live-start", auth, async (req, res) => {
       startTime: new Date(),
     });
 
+    // ==================================
+    // UPDATE MASJID STATUS
+    // ==================================
+
     await User.findByIdAndUpdate(masjidId, {
       isLive: true,
       currentLiveReport: report._id,
     });
 
     // ==================================
-    // SEND PUSH
+    // NO USERS FOUND
     // ==================================
+
+    if (users.length === 0) {
+      return res.json({
+        success: true,
+        message: "No subscribed users found",
+      });
+    }
+
+    // ==================================
+    // SEND FCM
+    // ==================================
+
+    let successCount = 0;
+    let failedCount = 0;
 
     for (const user of users) {
       try {
-        await admin.messaging().send({
+        const message = {
           token: user.fcmToken,
+
+          notification: {
+            title: `${prayerType.toUpperCase()} Live Started`,
+            body: "Tap to join live Azaan",
+          },
 
           data: {
             type: "LIVE_START",
-
             masjidId: String(masjidId),
-
-            prayerstype: prayerType,
-          },
-
-          notification: {
-            title: prayerType.toUpperCase() + " Live Started",
-
-            body: "Tap to join live Ajan",
+            prayerType: String(prayerType),
+            reportId: String(report._id),
           },
 
           android: {
             priority: "high",
+            notification: {
+              channelId: "default",
+              sound: "default",
+            },
           },
 
           apns: {
@@ -119,11 +161,38 @@ router.post("/live-start", auth, async (req, res) => {
               },
             },
           },
-        });
+        };
 
-        console.log("Notification Sent:", user.mobile);
+        const response = await admin.messaging().send(message);
+
+        console.log(`Notification Sent To ${user.mobile} :`, response);
+
+        successCount++;
       } catch (error) {
-        console.log("FCM Error:", error.message);
+        failedCount++;
+
+        console.log("=================================");
+        console.log("FCM ERROR");
+        console.log("User:", user.mobile);
+        console.log("Token:", user.fcmToken);
+        console.log("Code:", error.code);
+        console.log("Message:", error.message);
+        console.log(error);
+        console.log("=================================");
+
+        // Invalid token remove
+        if (
+          error.code === "messaging/registration-token-not-registered" ||
+          error.code === "messaging/invalid-registration-token"
+        ) {
+          await User.findByIdAndUpdate(user._id, {
+            $unset: {
+              fcmToken: 1,
+            },
+          });
+
+          console.log("Invalid token removed for:", user.mobile);
+        }
       }
     }
 
@@ -131,14 +200,19 @@ router.post("/live-start", auth, async (req, res) => {
     // RESPONSE
     // ==================================
 
-    res.json({
+    return res.json({
       success: true,
-      message: "Live notification sent",
+      message: "Live notification process completed",
+      totalUsers: users.length,
+      successCount,
+      failedCount,
+      reportId: report._id,
     });
   } catch (error) {
+    console.log("LIVE START ERROR");
     console.log(error);
 
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: error.message,
     });
