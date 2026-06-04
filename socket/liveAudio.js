@@ -1,12 +1,18 @@
+const INSTANCE_ID = Math.random().toString(36).substring(2, 8);
+
+console.log(`🚀 Socket Instance Started: ${INSTANCE_ID}`);
+
 const broadcasters = {};
 const viewers = {};
 
 module.exports = (io) => {
   io.on("connection", (socket) => {
-    console.log("✅ Connected:", socket.id);
+    console.log(`✅ Connected: ${socket.id}`);
+    console.log(`📦 Instance: ${INSTANCE_ID}`);
+    console.log(`🆔 PID: ${process.pid}`);
 
     // =====================================
-    // MASJID START LIVE
+    // BROADCASTER
     // =====================================
 
     socket.on("broadcaster", ({ roomId }) => {
@@ -14,16 +20,29 @@ module.exports = (io) => {
 
       broadcasters[roomId] = socket.id;
 
+      socket.join(roomId);
+
+      console.log("==========================");
       console.log("🎤 Broadcaster Started");
+      console.log("Instance:", INSTANCE_ID);
+      console.log("PID:", process.pid);
       console.log("RoomId:", roomId);
       console.log("Socket:", socket.id);
       console.log("Broadcasters:", broadcasters);
+      console.log("==========================");
     });
+
+    // =====================================
+    // VIEWER
+    // =====================================
 
     socket.on("viewer", ({ roomId }) => {
       roomId = String(roomId);
 
+      console.log("==========================");
       console.log("👂 Viewer Joined");
+      console.log("Instance:", INSTANCE_ID);
+      console.log("PID:", process.pid);
       console.log("RoomId:", roomId);
       console.log("Broadcasters:", broadcasters);
 
@@ -32,9 +51,20 @@ module.exports = (io) => {
       console.log("Found Broadcaster:", broadcasterId);
 
       if (!broadcasterId) {
+        console.log("❌ Broadcast Not Found");
+
         socket.emit("broadcast-not-found");
+
         return;
       }
+
+      socket.join(roomId);
+
+      if (!viewers[roomId]) {
+        viewers[roomId] = new Set();
+      }
+
+      viewers[roomId].add(socket.id);
 
       socket.emit("viewer-accepted", {
         broadcasterId,
@@ -43,11 +73,15 @@ module.exports = (io) => {
       io.to(broadcasterId).emit("viewer", {
         viewerId: socket.id,
       });
-    });
 
-    // =====================================
-    // USER JOIN LIVE
-    // =====================================
+      io.to(broadcasterId).emit("viewer-count", {
+        count: viewers[roomId].size,
+      });
+
+      console.log("Viewer Count:", viewers[roomId].size);
+
+      console.log("==========================");
+    });
 
     // =====================================
     // OFFER
@@ -85,7 +119,7 @@ module.exports = (io) => {
     });
 
     // =====================================
-    // STOP LIVE
+    // STOP
     // =====================================
 
     socket.on("stop-broadcast", ({ roomId }) => {
@@ -106,8 +140,6 @@ module.exports = (io) => {
     socket.on("disconnect", () => {
       console.log("❌ Disconnected:", socket.id);
 
-      // broadcaster disconnected
-
       Object.keys(broadcasters).forEach((roomId) => {
         if (broadcasters[roomId] === socket.id) {
           console.log("🎤 Broadcaster Disconnected:", roomId);
@@ -115,11 +147,10 @@ module.exports = (io) => {
           io.to(roomId).emit("broadcast-stopped");
 
           delete broadcasters[roomId];
+
           delete viewers[roomId];
         }
       });
-
-      // viewer disconnected
 
       Object.keys(viewers).forEach((roomId) => {
         if (viewers[roomId]?.has(socket.id)) {
