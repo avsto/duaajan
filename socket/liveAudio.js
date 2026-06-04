@@ -14,37 +14,27 @@ module.exports = (io) => {
 
       broadcasters[roomId] = socket.id;
 
-      socket.join(roomId);
-
       console.log("🎤 Broadcaster Started");
-      console.log("Room:", roomId);
+      console.log("RoomId:", roomId);
       console.log("Socket:", socket.id);
+      console.log("Broadcasters:", broadcasters);
     });
-
-    // =====================================
-    // USER JOIN LIVE
-    // =====================================
 
     socket.on("viewer", ({ roomId }) => {
       roomId = String(roomId);
 
       console.log("👂 Viewer Joined");
-      console.log("Room:", roomId);
+      console.log("RoomId:", roomId);
+      console.log("Broadcasters:", broadcasters);
 
       const broadcasterId = broadcasters[roomId];
+
+      console.log("Found Broadcaster:", broadcasterId);
 
       if (!broadcasterId) {
         socket.emit("broadcast-not-found");
         return;
       }
-
-      socket.join(roomId);
-
-      if (!viewers[roomId]) {
-        viewers[roomId] = new Set();
-      }
-
-      viewers[roomId].add(socket.id);
 
       socket.emit("viewer-accepted", {
         broadcasterId,
@@ -53,13 +43,11 @@ module.exports = (io) => {
       io.to(broadcasterId).emit("viewer", {
         viewerId: socket.id,
       });
-
-      io.to(broadcasterId).emit("viewer-count", {
-        count: viewers[roomId].size,
-      });
-
-      console.log(`Room ${roomId} Viewers: ${viewers[roomId].size}`);
     });
+
+    // =====================================
+    // USER JOIN LIVE
+    // =====================================
 
     // =====================================
     // OFFER
