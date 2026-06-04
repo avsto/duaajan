@@ -1,3 +1,5 @@
+// liveAudio.js
+
 const broadcasters = {};
 const viewers = {};
 
@@ -35,6 +37,7 @@ module.exports = (io) => {
 
         callback?.({
           success: false,
+          message: error.message,
         });
       }
     });
@@ -110,7 +113,7 @@ module.exports = (io) => {
     });
 
     // =====================================
-    // ICE
+    // ICE CANDIDATE
     // =====================================
 
     socket.on("candidate", ({ target, candidate }) => {
@@ -127,14 +130,18 @@ module.exports = (io) => {
     // =====================================
 
     socket.on("stop-broadcast", ({ roomId }) => {
-      const roomKey = String(roomId).trim();
+      try {
+        const roomKey = String(roomId).trim();
 
-      console.log("🛑 Broadcast Stopped:", roomKey);
+        console.log("🛑 Broadcast Stopped:", roomKey);
 
-      io.to(roomKey).emit("broadcast-stopped");
+        io.to(roomKey).emit("broadcast-stopped");
 
-      delete broadcasters[roomKey];
-      delete viewers[roomKey];
+        delete broadcasters[roomKey];
+        delete viewers[roomKey];
+      } catch (error) {
+        console.log(error);
+      }
     });
 
     // =====================================
@@ -144,7 +151,7 @@ module.exports = (io) => {
     socket.on("disconnect", () => {
       console.log("❌ Disconnected:", socket.id);
 
-      // broadcaster disconnected
+      // Broadcaster disconnected
 
       Object.keys(broadcasters).forEach((roomKey) => {
         if (broadcasters[roomKey] === socket.id) {
@@ -157,7 +164,7 @@ module.exports = (io) => {
         }
       });
 
-      // viewer disconnected
+      // Viewer disconnected
 
       Object.keys(viewers).forEach((roomKey) => {
         if (viewers[roomKey]?.has(socket.id)) {
@@ -175,7 +182,7 @@ module.exports = (io) => {
             "📉 Viewer Left:",
             socket.id,
             "Count:",
-            viewers[roomKey]?.size || 0,
+            viewers[roomKey].size,
           );
         }
       });
