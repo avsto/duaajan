@@ -47,10 +47,6 @@ router.post("/live-start", auth, async (req, res) => {
     const masjidId = req.user._id;
     const { prayerType } = req.body;
 
-    // ==================================
-    // VALIDATION
-    // ==================================
-
     const validPrayers = ["fajr", "zuhr", "asr", "maghrib", "isha", "general"];
 
     if (!prayerType || !validPrayers.includes(prayerType)) {
@@ -60,170 +56,62 @@ router.post("/live-start", auth, async (req, res) => {
       });
     }
 
-    console.log("=================================");
-    console.log("Live Start Request");
-    console.log("Masjid ID:", masjidId);
-    console.log("Prayer Type:", prayerType);
-    console.log("=================================");
-
-    // ==================================
-    // FIND USERS
-    // ==================================
-
-    const users = await User.find({
-      role: "user",
-      selectedMasjid: masjidId,
-      [`prayers.${prayerType}`]: true,
-      fcmToken: {
-        $exists: true,
-        $ne: null,
-        $ne: "",
-      },
-    });
-
-    console.log("Users Found:", users.length);
-
-    users.forEach((user) => {
-      console.log({
-        mobile: user.mobile,
-        token: user.fcmToken
-          ? user.fcmToken.substring(0, 30) + "..."
-          : "No Token",
-      });
-    });
-
-    // ==================================
-    // CREATE LIVE REPORT
-    // ==================================
-
+    // CREATE LIVE REPORT (IMPORTANT FIX: status only)
     const report = await LiveReport.create({
       masjidId,
       roomId: String(masjidId),
       prayerType,
       startTime: new Date(),
-      isLive: true,
+      status: "live",
     });
-
-    await LiveReport.findByIdAndUpdate(report._id, {
-      $inc: {
-        totalListeners: 1,
-      },
-    });
-
-    // ==================================
-    // UPDATE MASJID STATUS
-    // ==================================
 
     await User.findByIdAndUpdate(masjidId, {
       isLive: true,
       currentLiveReport: report._id,
     });
 
-    // ==================================
-    // NO USERS FOUND
-    // ==================================
-
-    if (users.length === 0) {
-      return res.json({
-        success: true,
-        message: "No subscribed users found",
-      });
-    }
-
-    // ==================================
-    // SEND FCM
-    // ==================================
+    // USERS
+    const users = await User.find({
+      role: "user",
+      selectedMasjid: masjidId,
+      [`prayers.${prayerType}`]: true,
+      fcmToken: { $exists: true, $ne: "" },
+    });
 
     let successCount = 0;
     let failedCount = 0;
 
     for (const user of users) {
       try {
-        const message = {
+        await admin.messaging().send({
           token: user.fcmToken,
-
           notification: {
             title: `${prayerType.toUpperCase()} Live Started`,
             body: "Tap to join live Azaan",
           },
-
           data: {
             type: "LIVE_START",
             masjidId: String(masjidId),
-            prayerType: String(prayerType),
+            roomId: String(masjidId),
             reportId: String(report._id),
           },
-
-          android: {
-            priority: "high",
-            notification: {
-              channelId: "default",
-              sound: "default",
-            },
-          },
-
-          apns: {
-            payload: {
-              aps: {
-                sound: "default",
-              },
-            },
-          },
-        };
-
-        const response = await admin.messaging().send(message);
-
-        console.log(`Notification Sent To ${user.mobile} :`, response);
+        });
 
         successCount++;
-      } catch (error) {
+      } catch (err) {
         failedCount++;
-
-        console.log("=================================");
-        console.log("FCM ERROR");
-        console.log("User:", user.mobile);
-        console.log("Token:", user.fcmToken);
-        console.log("Code:", error.code);
-        console.log("Message:", error.message);
-        console.log(error);
-        console.log("=================================");
-
-        // Invalid token remove
-        if (
-          error.code === "messaging/registration-token-not-registered" ||
-          error.code === "messaging/invalid-registration-token"
-        ) {
-          await User.findByIdAndUpdate(user._id, {
-            $unset: {
-              fcmToken: 1,
-            },
-          });
-
-          console.log("Invalid token removed for:", user.mobile);
-        }
       }
     }
 
-    // ==================================
-    // RESPONSE
-    // ==================================
-
     return res.json({
       success: true,
-      message: "Live notification process completed",
-      totalUsers: users.length,
+      reportId: report._id,
       successCount,
       failedCount,
-      reportId: report._id,
     });
-  } catch (error) {
-    console.log("LIVE START ERROR");
-    console.log(error);
-
-    return res.status(500).json({
-      success: false,
-      message: error.message,
-    });
+  } catch (err) {
+    console.log(err);
+    return res.status(500).json({ success: false });
   }
 });
 
