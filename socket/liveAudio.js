@@ -16,28 +16,26 @@ module.exports = (io) => {
       try {
         const roomKey = String(roomId);
 
-        await LiveReport.findOneAndUpdate(
+        const result = await LiveReport.findOneAndUpdate(
           {
             roomId: roomKey,
             status: "live",
           },
           {
-            broadcasterSocketId: socket.id,
+            $set: {
+              broadcasterSocketId: socket.id,
+            },
           },
+          { new: true },
         );
 
-        console.log("🎤 Broadcaster Started");
-        console.log("Room:", socket.id);
+        console.log("UPDATED:", result);
 
-        callback?.({
-          success: true,
-        });
+        callback?.({ success: true });
       } catch (error) {
         console.log(error);
 
-        callback?.({
-          success: false,
-        });
+        callback?.({ success: false });
       }
     });
 
