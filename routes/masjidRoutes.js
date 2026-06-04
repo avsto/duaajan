@@ -98,8 +98,16 @@ router.post("/live-start", auth, async (req, res) => {
 
     const report = await LiveReport.create({
       masjidId,
+      roomId: String(masjidId),
       prayerType,
       startTime: new Date(),
+      isLive: true,
+    });
+
+    await LiveReport.findByIdAndUpdate(report._id, {
+      $inc: {
+        totalListeners: 1,
+      },
     });
 
     // ==================================

@@ -8,6 +8,17 @@ const liveReportSchema = new mongoose.Schema(
       required: true,
     },
 
+    roomId: {
+      type: String,
+      required: true,
+      index: true,
+    },
+
+    broadcasterSocketId: {
+      type: String,
+      default: null,
+    },
+
     prayerType: {
       type: String,
       enum: ["fajr", "zuhr", "asr", "maghrib", "isha", "general"],
@@ -57,6 +68,11 @@ const liveReportSchema = new mongoose.Schema(
       type: String,
       enum: ["live", "completed"],
       default: "live",
+    },
+
+    isLive: {
+      type: Boolean,
+      default: true,
     },
   },
   {
