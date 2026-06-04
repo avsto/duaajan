@@ -27,7 +27,7 @@ module.exports = (io) => {
         );
 
         console.log("🎤 Broadcaster Started");
-        console.log("Room:", roomKey);
+        console.log("Room:", socket.id);
 
         callback?.({
           success: true,
