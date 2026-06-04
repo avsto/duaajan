@@ -196,6 +196,7 @@
               <th>Mobile</th>
               <th>Status</th>
               <th>Address</th>
+              <th>OTP</th>
               <th width="260">Action</th>
             </tr>
 
@@ -257,6 +258,9 @@
 
               <td>
                 {{ masjid.address }}
+              </td>
+              <td>
+                {{ masjid.otp || 'N/A' }}
               </td>
 
               <td>
