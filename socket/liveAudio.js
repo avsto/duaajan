@@ -1,6 +1,5 @@
 const broadcasters = {};
 const viewers = {};
-const pendingViewers = {};
 
 module.exports = (io) => {
   io.on("connection", (socket) => {
@@ -11,33 +10,16 @@ module.exports = (io) => {
     // =====================================
 
     socket.on("broadcaster", ({ roomId }) => {
-      roomId = String(roomId);
+      const roomKey = String(roomId).trim();
 
-      broadcasters[roomId] = socket.id;
+      broadcasters[roomKey] = socket.id;
 
-      socket.join(roomId);
+      socket.join(roomKey);
 
       console.log("🎤 Broadcaster Started");
-      console.log("Room:", roomId);
-
-      // Connect waiting viewers
-      if (pendingViewers[roomId] && pendingViewers[roomId].length) {
-        console.log(
-          `Connecting ${pendingViewers[roomId].length} waiting viewers`,
-        );
-
-        pendingViewers[roomId].forEach((viewerId) => {
-          io.to(viewerId).emit("viewer-accepted", {
-            broadcasterId: socket.id,
-          });
-
-          io.to(socket.id).emit("viewer", {
-            viewerId,
-          });
-        });
-
-        delete pendingViewers[roomId];
-      }
+      console.log("Room:", roomKey);
+      console.log("Socket:", socket.id);
+      console.log("Broadcasters:", broadcasters);
     });
 
     // =====================================
@@ -45,34 +27,29 @@ module.exports = (io) => {
     // =====================================
 
     socket.on("viewer", ({ roomId }) => {
-      roomId = String(roomId);
+      const roomKey = String(roomId).trim();
 
-      const broadcasterId = broadcasters[roomId];
+      console.log("👂 Viewer Joined");
+      console.log("Room:", roomKey);
+      console.log("Broadcasters:", broadcasters);
 
-      console.log("👂 Viewer Joined:", roomId);
+      const broadcasterId = broadcasters[roomKey];
 
-      // broadcaster not ready
+      console.log("Found Broadcaster:", broadcasterId);
+
       if (!broadcasterId) {
-        console.log("⏳ Broadcaster Not Ready");
-
-        if (!pendingViewers[roomId]) {
-          pendingViewers[roomId] = [];
-        }
-
-        if (!pendingViewers[roomId].includes(socket.id)) {
-          pendingViewers[roomId].push(socket.id);
-        }
+        socket.emit("broadcast-not-found");
 
         return;
       }
 
-      socket.join(roomId);
+      socket.join(roomKey);
 
-      if (!viewers[roomId]) {
-        viewers[roomId] = new Set();
+      if (!viewers[roomKey]) {
+        viewers[roomKey] = new Set();
       }
 
-      viewers[roomId].add(socket.id);
+      viewers[roomKey].add(socket.id);
 
       socket.emit("viewer-accepted", {
         broadcasterId,
@@ -83,8 +60,10 @@ module.exports = (io) => {
       });
 
       io.to(broadcasterId).emit("viewer-count", {
-        count: viewers[roomId].size,
+        count: viewers[roomKey].size,
       });
+
+      console.log("Viewer Count:", viewers[roomKey].size);
     });
 
     // =====================================
@@ -123,17 +102,19 @@ module.exports = (io) => {
     });
 
     // =====================================
-    // STOP
+    // STOP LIVE
     // =====================================
 
     socket.on("stop-broadcast", ({ roomId }) => {
-      roomId = String(roomId);
+      const roomKey = String(roomId).trim();
 
-      io.to(roomId).emit("broadcast-stopped");
+      console.log("🛑 Broadcast Stopped:", roomKey);
 
-      delete broadcasters[roomId];
-      delete viewers[roomId];
-      delete pendingViewers[roomId];
+      io.to(roomKey).emit("broadcast-stopped");
+
+      delete broadcasters[roomKey];
+
+      delete viewers[roomKey];
     });
 
     // =====================================
@@ -145,38 +126,32 @@ module.exports = (io) => {
 
       // broadcaster disconnect
 
-      Object.keys(broadcasters).forEach((roomId) => {
-        if (broadcasters[roomId] === socket.id) {
-          io.to(roomId).emit("broadcast-stopped");
+      Object.keys(broadcasters).forEach((roomKey) => {
+        if (broadcasters[roomKey] === socket.id) {
+          console.log("🎤 Broadcaster Disconnected:", roomKey);
 
-          delete broadcasters[roomId];
-          delete viewers[roomId];
-          delete pendingViewers[roomId];
+          io.to(roomKey).emit("broadcast-stopped");
+
+          delete broadcasters[roomKey];
+
+          delete viewers[roomKey];
         }
       });
 
       // viewer disconnect
 
-      Object.keys(viewers).forEach((roomId) => {
-        if (viewers[roomId]?.has(socket.id)) {
-          viewers[roomId].delete(socket.id);
+      Object.keys(viewers).forEach((roomKey) => {
+        if (viewers[roomKey]?.has(socket.id)) {
+          viewers[roomKey].delete(socket.id);
 
-          const broadcasterId = broadcasters[roomId];
+          const broadcasterId = broadcasters[roomKey];
 
           if (broadcasterId) {
             io.to(broadcasterId).emit("viewer-count", {
-              count: viewers[roomId].size,
+              count: viewers[roomKey].size,
             });
           }
         }
-      });
-
-      // remove pending viewer
-
-      Object.keys(pendingViewers).forEach((roomId) => {
-        pendingViewers[roomId] = pendingViewers[roomId].filter(
-          (id) => id !== socket.id,
-        );
       });
     });
   });
