@@ -46,9 +46,15 @@ module.exports = (io) => {
 
       const broadcasterId = broadcasters[roomKey];
 
-      console.log("👂 Viewer Joined:", roomKey);
+      console.log("=================================");
+      console.log("👂 Viewer Joined");
+      console.log("Room:", roomKey);
+      console.log("Socket:", socket.id);
+      console.log("Broadcaster:", broadcasterId);
 
       if (!broadcasterId) {
+        console.log("❌ Broadcast Not Found");
+
         socket.emit("broadcast-not-found");
         return;
       }
@@ -57,8 +63,13 @@ module.exports = (io) => {
         viewers[roomKey] = new Set();
       }
 
-      // duplicate join avoid
+      console.log("Before:", Array.from(viewers[roomKey]));
+
       viewers[roomKey].add(socket.id);
+
+      console.log("After:", Array.from(viewers[roomKey]));
+
+      console.log("Viewer Count:", viewers[roomKey].size);
 
       socket.join(roomKey);
 
@@ -74,7 +85,7 @@ module.exports = (io) => {
         count: viewers[roomKey].size,
       });
 
-      console.log("Viewer Count:", viewers[roomKey].size);
+      console.log("=================================");
     });
 
     // =====================================
