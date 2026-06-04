@@ -9,17 +9,32 @@ module.exports = (io) => {
     // BROADCASTER START
     // =====================================
 
-    socket.on("broadcaster", ({ roomId }) => {
-      const roomKey = String(roomId).trim();
+    socket.on("broadcaster", ({ roomId }, callback) => {
+      try {
+        const roomKey = String(roomId).trim();
 
-      broadcasters[roomKey] = socket.id;
+        broadcasters[roomKey] = socket.id;
 
-      socket.join(roomKey);
+        socket.join(roomKey);
 
-      console.log("🎤 Broadcaster Started");
-      console.log("Room:", roomKey);
-      console.log("Socket:", socket.id);
-      console.log("Broadcasters:", broadcasters);
+        if (!viewers[roomKey]) {
+          viewers[roomKey] = new Set();
+        }
+
+        console.log("🎤 Broadcaster Started");
+        console.log("Room:", roomKey);
+        console.log("Socket:", socket.id);
+
+        callback?.({
+          success: true,
+        });
+      } catch (error) {
+        console.log(error);
+
+        callback?.({
+          success: false,
+        });
+      }
     });
 
     // =====================================
@@ -29,27 +44,23 @@ module.exports = (io) => {
     socket.on("viewer", ({ roomId }) => {
       const roomKey = String(roomId).trim();
 
-      console.log("👂 Viewer Joined");
-      console.log("Room:", roomKey);
-      console.log("Broadcasters:", broadcasters);
-
       const broadcasterId = broadcasters[roomKey];
 
-      console.log("Found Broadcaster:", broadcasterId);
+      console.log("👂 Viewer Joined:", roomKey);
 
       if (!broadcasterId) {
         socket.emit("broadcast-not-found");
-
         return;
       }
-
-      socket.join(roomKey);
 
       if (!viewers[roomKey]) {
         viewers[roomKey] = new Set();
       }
 
+      // duplicate join avoid
       viewers[roomKey].add(socket.id);
+
+      socket.join(roomKey);
 
       socket.emit("viewer-accepted", {
         broadcasterId,
@@ -144,11 +155,17 @@ module.exports = (io) => {
         if (viewers[roomKey]?.has(socket.id)) {
           viewers[roomKey].delete(socket.id);
 
+          // cleanup empty room
+
+          if (viewers[roomKey].size === 0) {
+            delete viewers[roomKey];
+          }
+
           const broadcasterId = broadcasters[roomKey];
 
           if (broadcasterId) {
             io.to(broadcasterId).emit("viewer-count", {
-              count: viewers[roomKey].size,
+              count: viewers[roomKey]?.size || 0,
             });
           }
         }
