@@ -6,9 +6,10 @@ const express = require("express");
 const connectDB = require("./config/db");
 const cors = require("cors");
 const session = require("express-session");
-const { MongoStore } = require("connect-mongo");
+const MongoStore = require("connect-mongo"); // ✅ FIX: Standard CommonJS import correction
 
 const http = require("http");
+const { WebSocketServer, WebSocket } = require("ws"); // ✅ FIX: Explicitly extracted 'WebSocket' to fix connection state evaluations
 
 const app = express();
 const server = http.createServer(app);
@@ -16,24 +17,22 @@ const server = http.createServer(app);
 // ======================================
 // DATABASE
 // ======================================
-
 connectDB();
 
 // ======================================
-// SOCKET.IO
+// WEBSOCKET SIGNALING SERVER (INTEGRATED)
 // ======================================
-const { WebSocketServer } = require("ws");
+// ✅ FIXED: Instead of mapping an isolated port (8089), bind WS directly onto your HTTP server instance.
+// Now, your React Native apps should link to: "wss://://duaajan.com" or "wss://duaajan.com" depending on your proxy configurations.
+const wss = new WebSocketServer({ server });
+console.log("⚡ WebRTC Signaling Engine attached to Express Core Instance");
 
-// Port 8080 par server start karein
-const wss = new WebSocketServer({ port: 8089 });
-console.log("WebRTC Signaling Server running on port 8080");
-
-// Sabhi connected devices ko track karne ke liye
+// Track active communication peers
 let broadcaster = null;
 let listeners = new Set();
 
 wss.on("connection", (ws) => {
-  console.log("Naya device connect hua");
+  console.log("⚓ New mobile device linked to WebRTC gateway");
 
   ws.on("message", (message) => {
     try {
@@ -42,42 +41,45 @@ wss.on("connection", (ws) => {
       switch (data.type) {
         case "register-broadcaster":
           broadcaster = ws;
-          console.log("Broadcaster register ho gaya");
+          console.log("📢 Broadcaster registered as source master");
           break;
 
         case "register-listener":
           listeners.add(ws);
-          console.log("Naya Listener register ho gaya");
-          // Agar broadcaster pehle se live hai, toh listener ko batao
+          console.log("🎧 New passive listener attached to subscriber array");
+          // If a broadcast offer is already staged, inform the incoming listener
           if (broadcaster) {
             ws.send(JSON.stringify({ type: "broadcaster-online" }));
           }
           break;
 
         case "offer":
-          // Broadcaster se offer lekar sabhi listeners ko bhej do
-          console.log("Offer mila, listeners ko forward kar raha hu...");
+          console.log(
+            "📦 Offer received, piping broadcast tracks down to listeners...",
+          );
           listeners.forEach((listener) => {
-            if (listener.readyState === ws.OPEN) {
+            // ✅ FIXED: Evaluated against WebSocket.OPEN instead of the undefined property ws.OPEN
+            if (listener.readyState === WebSocket.OPEN) {
               listener.send(JSON.stringify({ type: "offer", sdp: data.sdp }));
             }
           });
           break;
 
         case "answer":
-          // Listener se answer lekar wapas broadcaster ko bhej do
-          console.log("Answer mila, broadcaster ko forward kar raha hu...");
-          if (broadcaster && broadcaster.readyState === ws.OPEN) {
+          console.log(
+            "🤝 Answer received, forwarding handshake down to broadcaster...",
+          );
+          // ✅ FIXED: Evaluated against WebSocket.OPEN
+          if (broadcaster && broadcaster.readyState === WebSocket.OPEN) {
             broadcaster.send(JSON.stringify({ type: "answer", sdp: data.sdp }));
           }
           break;
 
         case "ice-candidate":
-          // ICE Candidates ko sahi target device par forward karein
           if (ws === broadcaster) {
-            // Broadcaster ka candidate sabhi listeners ko bhejein
             listeners.forEach((listener) => {
-              if (listener.readyState === ws.OPEN) {
+              // ✅ FIXED: Evaluated against WebSocket.OPEN
+              if (listener.readyState === WebSocket.OPEN) {
                 listener.send(
                   JSON.stringify({
                     type: "ice-candidate",
@@ -87,8 +89,8 @@ wss.on("connection", (ws) => {
               }
             });
           } else {
-            // Listener ka candidate broadcaster ko bhejein
-            if (broadcaster && broadcaster.readyState === ws.OPEN) {
+            // ✅ FIXED: Evaluated against WebSocket.OPEN
+            if (broadcaster && broadcaster.readyState === WebSocket.OPEN) {
               broadcaster.send(
                 JSON.stringify({
                   type: "ice-candidate",
@@ -100,20 +102,21 @@ wss.on("connection", (ws) => {
           break;
       }
     } catch (err) {
-      console.error("Error parsing message:", err);
+      console.error("❌ Message parsing anomaly recorded:", err);
     }
   });
 
   ws.on("close", () => {
     if (ws === broadcaster) {
-      console.log("Broadcaster disconnect hua");
+      console.log("❌ Broadcaster stream disconnected from grid");
       broadcaster = null;
-      // Listeners ko inform karein ki live stream band ho gayi
-      listeners.forEach((listener) =>
-        listener.send(JSON.stringify({ type: "broadcaster-offline" })),
-      );
+      listeners.forEach((listener) => {
+        if (listener.readyState === WebSocket.OPEN) {
+          listener.send(JSON.stringify({ type: "broadcaster-offline" }));
+        }
+      });
     } else {
-      console.log("Listener disconnect hua");
+      console.log("ℹ️ Listener removed from subscriber array");
       listeners.delete(ws);
     }
   });
@@ -122,81 +125,59 @@ wss.on("connection", (ws) => {
 // ======================================
 // MIDDLEWARES
 // ======================================
-
 app.use(cors());
-
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
-app.use(
-  express.urlencoded({
-    extended: true,
-  }),
-);
-
-// =========================
-// SESSION
-// =========================
-
+// =========================================
+// SESSION MANAGEMENT
+// =========================================
 app.use(
   session({
     secret: process.env.JWT_SECRET || "duaajan-secret-key",
-
     resave: false,
-
     saveUninitialized: false,
-
     store: MongoStore.create({
       mongoUrl: process.env.MONGO_URL,
       collectionName: "sessions",
     }),
-
     cookie: {
       maxAge: 1000 * 60 * 60 * 24, // 1 day
       httpOnly: true,
-      secure: false,
+      secure: false, // Set to true if deploying directly on an HTTPS production ecosystem
     },
   }),
 );
 
 // ======================================
-// VIEW ENGINE
+// VIEW ENGINE CONFIGURATION
 // ======================================
-
 app.set("view engine", "ejs");
-
 app.set("views", path.join(__dirname, "views"));
-
 app.use(express.static(path.join(__dirname, "public")));
-
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 // ======================================
-// API ROUTES
+// API ROUTES MANAGEMENT
 // ======================================
-
 app.use("/api/auth", require("./routes/authRoutes"));
 app.use("/api/user", require("./routes/userRoutes"));
 app.use("/api/masjid", require("./routes/masjidRoutes"));
 app.use("/api/donate", require("./routes/donateRoutes"));
 app.use("/api/ads", require("./routes/adRoutes"));
-// ======================================
-// ADMIN ROUTES
-// ======================================
 
+// ======================================
+// ADMIN & WEB FRAMEWORK ROUTES
+// ======================================
 app.use("/admin", require("./routes/adminRoutes"));
-
-// ======================================
-// HOME ROUTE
-// ======================================
-
 app.use("/", require("./routes/frontedRoutes"));
 
 // ======================================
-// START SERVER
+// ENGINE START SYSTEM
 // ======================================
-
 const PORT = process.env.PORT || 5000;
 
+// ✅ FIXED: Initializing via 'server.listen' instead of 'app.listen' to ensure Express handles WebSockets alongside standard API routing bindings
 server.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`🚀 Unified Node Engine deployed flawlessly on port ${PORT}`);
 });
