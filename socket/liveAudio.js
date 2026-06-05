@@ -56,16 +56,11 @@ module.exports = (io) => {
       try {
         const roomKey = String(roomId).trim();
 
-        console.log("================================");
-        console.log("Viewer Request:", roomKey);
-
         const report = await LiveReport.findOne({
           roomId: roomKey,
           status: "live",
           isLive: true,
         });
-
-        console.log("Report:", report);
 
         if (!report) {
           console.log("❌ Report Not Found");
@@ -73,18 +68,35 @@ module.exports = (io) => {
           return;
         }
 
-        console.log("DB Broadcaster Socket:", report.broadcasterSocketId);
-
         const broadcasterSocket = io.sockets.sockets.get(
           report.broadcasterSocketId,
         );
 
-        console.log("Socket Exists:", !!broadcasterSocket);
-      } catch (e) {
-        console.log(e);
+        if (!broadcasterSocket) {
+          console.log("❌ Broadcaster Socket Missing");
+          socket.emit("broadcast-not-found");
+          return;
+        }
+
+        socket.emit("viewer-accepted", {
+          broadcasterId: report.broadcasterSocketId,
+        });
+
+        console.log("✅ Viewer Accepted:", socket.id);
+
+        io.to(report.broadcasterSocketId).emit("viewer", {
+          viewerId: socket.id,
+        });
+
+        console.log(
+          "📤 Viewer Event Sent To Broadcaster:",
+          report.broadcasterSocketId,
+        );
+      } catch (error) {
+        console.log(error);
+        socket.emit("broadcast-not-found");
       }
     });
-
     // =====================================
     // OFFER
     // =====================================
