@@ -6,8 +6,7 @@ const express = require("express");
 const connectDB = require("./config/db");
 const cors = require("cors");
 const session = require("express-session");
-const MongoStore = require("connect-mongo"); // ✅ FIX: Standard CommonJS import correction
-
+const { MongoStore } = require("connect-mongo");
 const http = require("http");
 const { WebSocketServer, WebSocket } = require("ws"); // ✅ FIX: Explicitly extracted 'WebSocket' to fix connection state evaluations
 
