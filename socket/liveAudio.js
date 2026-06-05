@@ -13,6 +13,8 @@ module.exports = (io) => {
 
         socket.join(roomKey); // IMPORTANT FIX
 
+        console.log("🎤 Broadcaster Joined:", socket.id);
+
         const report = await LiveReport.findOneAndUpdate(
           {
             roomId: roomKey,
