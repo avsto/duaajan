@@ -1,11 +1,5 @@
 const LiveReport = require("../models/LiveReport");
 
-// roomId -> broadcasterSocketId
-const activeRooms = new Map();
-
-// socketId -> roomId (for cleanup)
-const socketToRoom = new Map();
-
 module.exports = (io) => {
   io.on("connection", (socket) => {
     console.log("✅ Connected:", socket.id);
@@ -19,19 +13,18 @@ module.exports = (io) => {
 
         socket.join(roomKey);
 
-        activeRooms.set(roomKey, socket.id);
-        socketToRoom.set(socket.id, roomKey);
-
-        await LiveReport.findOneAndUpdate(
+        // SAVE IN DB (SOURCE OF TRUTH)
+        const report = await LiveReport.findOneAndUpdate(
           { roomId: roomKey, status: "live" },
           {
             $set: {
               broadcasterSocketId: socket.id,
             },
           },
+          { new: true },
         );
 
-        console.log("🎤 Broadcaster Ready:", roomKey);
+        console.log("🎤 Broadcaster Ready:", roomKey, socket.id);
 
         cb?.({ success: true });
       } catch (err) {
@@ -41,16 +34,28 @@ module.exports = (io) => {
     });
 
     // =====================================
-    // VIEWER JOIN
+    // VIEWER JOIN (FIXED RELIABLE)
     // =====================================
     socket.on("viewer", async ({ roomId }) => {
       try {
         const roomKey = String(roomId).trim();
 
-        const broadcasterSocketId = activeRooms.get(roomKey);
+        // 🔥 WAIT UNTIL DB IS READY (IMPORTANT FIX)
+        let report = null;
 
-        if (!broadcasterSocketId) {
-          console.log("❌ No broadcaster in memory");
+        for (let i = 0; i < 5; i++) {
+          report = await LiveReport.findOne({
+            roomId: roomKey,
+            status: "live",
+          });
+
+          if (report?.broadcasterSocketId) break;
+
+          await new Promise((r) => setTimeout(r, 300));
+        }
+
+        if (!report || !report.broadcasterSocketId) {
+          console.log("❌ No broadcaster found (DB)");
           socket.emit("broadcast-not-found");
           return;
         }
@@ -58,10 +63,10 @@ module.exports = (io) => {
         socket.join(roomKey);
 
         socket.emit("viewer-accepted", {
-          broadcasterId: broadcasterSocketId,
+          broadcasterId: report.broadcasterSocketId,
         });
 
-        io.to(broadcasterSocketId).emit("viewer-joined", {
+        io.to(report.broadcasterSocketId).emit("viewer-joined", {
           viewerId: socket.id,
         });
 
@@ -75,6 +80,8 @@ module.exports = (io) => {
     // OFFER
     // =====================================
     socket.on("offer", ({ target, offer }) => {
+      if (!target || !offer) return;
+
       io.to(target).emit("offer", {
         sender: socket.id,
         offer,
@@ -85,6 +92,8 @@ module.exports = (io) => {
     // ANSWER
     // =====================================
     socket.on("answer", ({ target, answer }) => {
+      if (!target || !answer) return;
+
       io.to(target).emit("answer", {
         sender: socket.id,
         answer,
@@ -95,7 +104,7 @@ module.exports = (io) => {
     // CANDIDATE
     // =====================================
     socket.on("candidate", ({ target, candidate }) => {
-      if (!target) return;
+      if (!target || !candidate) return;
 
       io.to(target).emit("candidate", {
         sender: socket.id,
@@ -104,13 +113,11 @@ module.exports = (io) => {
     });
 
     // =====================================
-    // STOP BROADCAST (MANUAL)
+    // STOP BROADCAST
     // =====================================
     socket.on("stop-broadcast", async ({ roomId }) => {
       try {
         const roomKey = String(roomId).trim();
-
-        activeRooms.delete(roomKey);
 
         await LiveReport.findOneAndUpdate(
           { roomId: roomKey, status: "live" },
@@ -126,41 +133,37 @@ module.exports = (io) => {
 
         io.to(roomKey).emit("broadcast-stopped");
 
-        console.log("🛑 Broadcast Stopped:", roomKey);
+        console.log("🛑 Broadcast Stopped");
       } catch (err) {
         console.log("Stop Error:", err);
       }
     });
 
     // =====================================
-    // DISCONNECT (AUTO CLEANUP FIXED)
+    // DISCONNECT (SAFE)
     // =====================================
     socket.on("disconnect", async () => {
       try {
         console.log("❌ Disconnected:", socket.id);
 
-        const roomKey = socketToRoom.get(socket.id);
+        // find broadcaster in DB
+        const report = await LiveReport.findOne({
+          broadcasterSocketId: socket.id,
+          status: "live",
+        });
 
-        if (!roomKey) return;
+        if (!report) return;
 
-        activeRooms.delete(roomKey);
-        socketToRoom.delete(socket.id);
+        await LiveReport.findByIdAndUpdate(report._id, {
+          status: "completed",
+          isLive: false,
+          endTime: new Date(),
+          broadcasterSocketId: null,
+        });
 
-        await LiveReport.findOneAndUpdate(
-          { roomId: roomKey, status: "live" },
-          {
-            $set: {
-              status: "completed",
-              isLive: false,
-              endTime: new Date(),
-              broadcasterSocketId: null,
-            },
-          },
-        );
+        io.to(report.roomId).emit("broadcast-stopped");
 
-        io.to(roomKey).emit("broadcast-stopped");
-
-        console.log("🎤 Auto stopped broadcast:", roomKey);
+        console.log("🎤 Auto stopped broadcast");
       } catch (err) {
         console.log("Disconnect Error:", err);
       }
