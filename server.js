@@ -135,16 +135,20 @@ app.use(express.urlencoded({ extended: true }));
 app.use(
   session({
     secret: process.env.JWT_SECRET || "duaajan-secret-key",
+
     resave: false,
+
     saveUninitialized: false,
+
     store: MongoStore.create({
       mongoUrl: process.env.MONGO_URL,
       collectionName: "sessions",
     }),
+
     cookie: {
       maxAge: 1000 * 60 * 60 * 24, // 1 day
       httpOnly: true,
-      secure: false, // Set to true if deploying directly on an HTTPS production ecosystem
+      secure: false,
     },
   }),
 );
