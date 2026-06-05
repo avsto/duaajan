@@ -25,7 +25,7 @@ connectDB();
 const { WebSocketServer } = require("ws");
 
 // Port 8080 par server start karein
-const wss = new WebSocketServer({ port: 8080 });
+const wss = new WebSocketServer({ port: 8089 });
 console.log("WebRTC Signaling Server running on port 8080");
 
 // Sabhi connected devices ko track karne ke liye
