@@ -1,246 +1,96 @@
-// liveAudio.js
+const { WebSocketServer } = require("ws");
 
-const LiveReport = require("../models/LiveReport");
+// Port 8080 par server start karein
+const wss = new WebSocketServer({ port: 8080 });
+console.log("WebRTC Signaling Server running on port 8080");
 
-const viewers = {};
-const broadcasters = {};
+// Sabhi connected devices ko track karne ke liye
+let broadcaster = null;
+let listeners = new Set();
 
-module.exports = (io) => {
-  io.on("connection", (socket) => {
-    console.log("✅ Connected:", socket.id);
+wss.on("connection", (ws) => {
+  console.log("Naya device connect hua");
 
-    // =====================================
-    // BROADCASTER START
-    // =====================================
+  ws.on("message", (message) => {
+    try {
+      const data = JSON.parse(message);
 
-    socket.on("broadcaster", async ({ roomId }, callback) => {
-      try {
-        const roomKey = String(roomId).trim();
+      switch (data.type) {
+        case "register-broadcaster":
+          broadcaster = ws;
+          console.log("Broadcaster register ho gaya");
+          break;
 
-        socket.roomId = roomKey;
-        socket.isBroadcaster = true;
-
-        broadcasters[roomKey] = socket.id;
-
-        await LiveReport.findOneAndUpdate(
-          { roomId: roomKey },
-          {
-            broadcasterSocketId: socket.id,
-            status: "live",
-            isLive: true,
-          },
-          {
-            new: true,
-          },
-        );
-
-        console.log("🎤 Broadcaster Started:", roomKey);
-
-        callback?.({
-          success: true,
-        });
-      } catch (error) {
-        console.log(error);
-
-        callback?.({
-          success: false,
-        });
-      }
-    });
-
-    // =====================================
-    // VIEWER JOIN
-    // =====================================
-
-    socket.on("viewer", async ({ roomId }) => {
-      try {
-        const roomKey = String(roomId).trim();
-
-        const report = await LiveReport.findOne({
-          roomId: roomKey,
-          status: "live",
-          isLive: true,
-        });
-
-        if (!report) {
-          console.log("❌ Report Not Found");
-          socket.emit("broadcast-not-found");
-          return;
-        }
-
-        const broadcasterSocket = io.sockets.sockets.get(
-          report.broadcasterSocketId,
-        );
-
-        if (!broadcasterSocket) {
-          console.log("❌ Broadcaster Socket Missing");
-          socket.emit("broadcast-not-found");
-          return;
-        }
-
-        socket.emit("viewer-accepted", {
-          broadcasterId: report.broadcasterSocketId,
-        });
-
-        console.log("✅ Viewer Accepted:", socket.id);
-
-        io.to(report.broadcasterSocketId).emit("viewer", {
-          viewerId: socket.id,
-        });
-
-        console.log(
-          "📤 Viewer Event Sent To Broadcaster:",
-          report.broadcasterSocketId,
-        );
-      } catch (error) {
-        console.log(error);
-        socket.emit("broadcast-not-found");
-      }
-    });
-    // =====================================
-    // OFFER
-    // =====================================
-
-    socket.on("offer", ({ target, offer }) => {
-      if (!target || !offer) return;
-
-      io.to(target).emit("offer", {
-        sender: socket.id,
-        offer,
-      });
-    });
-
-    // =====================================
-    // ANSWER
-    // =====================================
-
-    socket.on("answer", ({ target, answer }) => {
-      if (!target || !answer) return;
-
-      io.to(target).emit("answer", {
-        sender: socket.id,
-        answer,
-      });
-    });
-
-    // =====================================
-    // ICE CANDIDATE
-    // =====================================
-
-    socket.on("candidate", ({ target, candidate }) => {
-      if (!target || !candidate) return;
-
-      io.to(target).emit("candidate", {
-        sender: socket.id,
-        candidate,
-      });
-    });
-
-    // =====================================
-    // STOP BROADCAST
-    // =====================================
-
-    socket.on("stop-broadcast", async ({ roomId }) => {
-      try {
-        const roomKey = String(roomId).trim();
-
-        await LiveReport.findOneAndUpdate(
-          {
-            roomId: roomKey,
-            status: "live",
-          },
-          {
-            status: "completed",
-            isLive: false,
-            broadcasterSocketId: null,
-            endTime: new Date(),
-          },
-        );
-
-        Object.keys(viewers).forEach((id) => {
-          if (viewers[id]?.roomId === roomKey) {
-            io.to(id).emit("broadcast-stopped");
-            delete viewers[id];
+        case "register-listener":
+          listeners.add(ws);
+          console.log("Naya Listener register ho gaya");
+          // Agar broadcaster pehle se live hai, toh listener ko batao
+          if (broadcaster) {
+            ws.send(JSON.stringify({ type: "broadcaster-online" }));
           }
-        });
+          break;
 
-        delete broadcasters[roomKey];
-
-        console.log("🛑 Broadcast Stopped:", roomKey);
-      } catch (error) {
-        console.log(error);
-      }
-    });
-
-    // =====================================
-    // DISCONNECT
-    // =====================================
-
-    socket.on("disconnect", async () => {
-      try {
-        console.log("❌ Disconnected:", socket.id);
-
-        // VIEWER LEFT
-
-        if (socket.isViewer) {
-          const viewer = viewers[socket.id];
-
-          if (viewer) {
-            const viewerCount =
-              Object.values(viewers).filter((v) => v.roomId === viewer.roomId)
-                .length - 1;
-
-            io.to(viewer.broadcasterId).emit("viewer-count", {
-              count: Math.max(0, viewerCount),
-            });
-
-            delete viewers[socket.id];
-          }
-
-          return;
-        }
-
-        // BROADCASTER LEFT
-
-        if (socket.isBroadcaster) {
-          const roomKey = socket.roomId;
-
-          setTimeout(async () => {
-            const currentBroadcaster = broadcasters[roomKey];
-
-            // reconnect ho gaya to skip
-            if (currentBroadcaster !== socket.id) {
-              return;
+        case "offer":
+          // Broadcaster se offer lekar sabhi listeners ko bhej do
+          console.log("Offer mila, listeners ko forward kar raha hu...");
+          listeners.forEach((listener) => {
+            if (listener.readyState === ws.OPEN) {
+              listener.send(JSON.stringify({ type: "offer", sdp: data.sdp }));
             }
+          });
+          break;
 
-            await LiveReport.findOneAndUpdate(
-              {
-                roomId: roomKey,
-                status: "live",
-              },
-              {
-                status: "completed",
-                isLive: false,
-                broadcasterSocketId: null,
-                endTime: new Date(),
-              },
-            );
+        case "answer":
+          // Listener se answer lekar wapas broadcaster ko bhej do
+          console.log("Answer mila, broadcaster ko forward kar raha hu...");
+          if (broadcaster && broadcaster.readyState === ws.OPEN) {
+            broadcaster.send(JSON.stringify({ type: "answer", sdp: data.sdp }));
+          }
+          break;
 
-            Object.keys(viewers).forEach((id) => {
-              if (viewers[id]?.roomId === roomKey) {
-                io.to(id).emit("broadcast-stopped");
-                delete viewers[id];
+        case "ice-candidate":
+          // ICE Candidates ko sahi target device par forward karein
+          if (ws === broadcaster) {
+            // Broadcaster ka candidate sabhi listeners ko bhejein
+            listeners.forEach((listener) => {
+              if (listener.readyState === ws.OPEN) {
+                listener.send(
+                  JSON.stringify({
+                    type: "ice-candidate",
+                    candidate: data.candidate,
+                  }),
+                );
               }
             });
-
-            delete broadcasters[roomKey];
-
-            console.log("🎤 Broadcaster Disconnected:", roomKey);
-          }, 30000); // 30 sec reconnect grace
-        }
-      } catch (error) {
-        console.log(error);
+          } else {
+            // Listener ka candidate broadcaster ko bhejein
+            if (broadcaster && broadcaster.readyState === ws.OPEN) {
+              broadcaster.send(
+                JSON.stringify({
+                  type: "ice-candidate",
+                  candidate: data.candidate,
+                }),
+              );
+            }
+          }
+          break;
       }
-    });
+    } catch (err) {
+      console.error("Error parsing message:", err);
+    }
   });
-};
+
+  ws.on("close", () => {
+    if (ws === broadcaster) {
+      console.log("Broadcaster disconnect hua");
+      broadcaster = null;
+      // Listeners ko inform karein ki live stream band ho gayi
+      listeners.forEach((listener) =>
+        listener.send(JSON.stringify({ type: "broadcaster-offline" })),
+      );
+    } else {
+      console.log("Listener disconnect hua");
+      listeners.delete(ws);
+    }
+  });
+});
