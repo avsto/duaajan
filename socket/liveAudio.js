@@ -1,97 +1,181 @@
 // liveAudio.js
+const LiveReport = require("../models/LiveReport");
 
 const broadcasters = {};
 const viewers = {};
 
 module.exports = (io) => {
   io.on("connection", (socket) => {
-    console.log("Connected:", socket.id);
+    console.log("✅ Connected:", socket.id);
 
     // =====================================
-    // BROADCASTER
+    // BROADCASTER START
     // =====================================
 
-    socket.on("broadcaster", ({ roomId }) => {
-      broadcasters[roomId] = socket.id;
+    socket.on("broadcaster", async ({ roomId }, callback) => {
+      try {
+        const roomKey = String(roomId);
 
-      socket.join(roomId);
+        await LiveReport.findOneAndUpdate(
+          {
+            roomId: roomKey,
+            status: "live",
+          },
+          {
+            broadcasterSocketId: socket.id,
+          },
+        );
 
-      console.log(`Broadcaster ${socket.id} started room ${roomId}`);
+        console.log("🎤 Broadcaster Started");
+        console.log("Room:", roomKey);
 
-      socket.to(roomId).emit("broadcaster");
+        callback?.({
+          success: true,
+        });
+      } catch (error) {
+        console.log(error);
+
+        callback?.({
+          success: false,
+        });
+      }
     });
 
     // =====================================
-    // LISTENER
+    // VIEWER JOIN
     // =====================================
 
-    socket.on("listener", ({ roomId }) => {
-      const broadcasterId = broadcasters[roomId];
+    socket.on("viewer", async ({ roomId }) => {
+      try {
+        const roomKey = String(roomId);
 
-      if (!broadcasterId) {
-        socket.emit("broadcast-ended");
-        return;
+        const report = await LiveReport.findOne({
+          roomId: roomKey,
+          status: "live",
+          isLive: true,
+        });
+
+        if (!report) {
+          socket.emit("broadcast-not-found");
+          return;
+        }
+
+        if (!report.broadcasterSocketId) {
+          socket.emit("broadcast-not-found");
+          return;
+        }
+
+        socket.emit("viewer-accepted", {
+          broadcasterId: report.broadcasterSocketId,
+        });
+
+        io.to(report.broadcasterSocketId).emit("viewer", {
+          viewerId: socket.id,
+        });
+
+        console.log("👂 Viewer Joined:", socket.id);
+      } catch (error) {
+        console.log(error);
       }
-
-      socket.join(roomId);
-
-      viewers[socket.id] = {
-        roomId,
-      };
-
-      io.to(broadcasterId).emit("listener", socket.id);
     });
 
     // =====================================
     // OFFER
     // =====================================
 
-    socket.on("offer", (id, description) => {
-      io.to(id).emit("offer", socket.id, description);
+    socket.on("offer", ({ target, offer }) => {
+      io.to(target).emit("offer", {
+        sender: socket.id,
+        offer,
+      });
     });
 
     // =====================================
     // ANSWER
     // =====================================
 
-    socket.on("answer", (id, description) => {
-      io.to(id).emit("answer", socket.id, description);
+    socket.on("answer", ({ target, answer }) => {
+      io.to(target).emit("answer", {
+        sender: socket.id,
+        answer,
+      });
     });
 
     // =====================================
-    // ICE
+    // ICE CANDIDATE
     // =====================================
 
-    socket.on("candidate", (id, candidate) => {
-      io.to(id).emit("candidate", socket.id, candidate);
+    socket.on("candidate", ({ target, candidate }) => {
+      if (!target) return;
+
+      io.to(target).emit("candidate", {
+        sender: socket.id,
+        candidate,
+      });
+    });
+
+    // =====================================
+    // STOP BROADCAST
+    // =====================================
+
+    socket.on("stop-broadcast", async ({ roomId }) => {
+      try {
+        const roomKey = String(roomId);
+
+        const report = await LiveReport.findOne({
+          roomId: roomKey,
+          status: "live",
+        });
+
+        if (report) {
+          await LiveReport.findByIdAndUpdate(report._id, {
+            status: "completed",
+            isLive: false,
+            endTime: new Date(),
+            broadcasterSocketId: null,
+            duration: Math.floor(
+              (Date.now() - report.startTime.getTime()) / 1000,
+            ),
+          });
+        }
+
+        io.to(roomKey).emit("broadcast-stopped");
+
+        console.log("🛑 Broadcast Stopped");
+      } catch (error) {
+        console.log(error);
+      }
     });
 
     // =====================================
     // DISCONNECT
     // =====================================
 
-    socket.on("disconnect", () => {
-      const roomId = viewers[socket.id]?.roomId;
+    socket.on("disconnect", async () => {
+      try {
+        const report = await LiveReport.findOne({
+          broadcasterSocketId: socket.id,
+          status: "live",
+        });
 
-      delete viewers[socket.id];
+        if (!report) return;
 
-      if (roomId) {
-        const broadcasterId = broadcasters[roomId];
+        await LiveReport.findByIdAndUpdate(report._id, {
+          status: "completed",
+          isLive: false,
+          endTime: new Date(),
+          broadcasterSocketId: null,
+          duration: Math.floor(
+            (Date.now() - report.startTime.getTime()) / 1000,
+          ),
+        });
 
-        if (broadcasterId) {
-          io.to(broadcasterId).emit("disconnectPeer", socket.id);
-        }
+        io.to(report.roomId).emit("broadcast-stopped");
+
+        console.log("🎤 Broadcaster Disconnected");
+      } catch (error) {
+        console.log(error);
       }
-
-      Object.keys(broadcasters).forEach((room) => {
-        if (broadcasters[room] === socket.id) {
-          delete broadcasters[room];
-
-          io.to(room).emit("broadcast-ended");
-
-          console.log(`Broadcast ended: ${room}`);
-        }
-      });
     });
   });
 };
