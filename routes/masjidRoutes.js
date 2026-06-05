@@ -63,6 +63,7 @@ router.post("/live-start", auth, async (req, res) => {
       prayerType,
       startTime: new Date(),
       status: "live",
+      isLive: true,
     });
 
     await User.findByIdAndUpdate(masjidId, {
