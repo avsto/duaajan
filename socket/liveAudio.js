@@ -31,7 +31,7 @@ module.exports = (io) => {
           },
           {
             new: true,
-          }
+          },
         );
 
         console.log("🎤 Broadcaster Started:", roomKey);
@@ -56,67 +56,32 @@ module.exports = (io) => {
       try {
         const roomKey = String(roomId).trim();
 
+        console.log("================================");
+        console.log("Viewer Request:", roomKey);
+
         const report = await LiveReport.findOne({
           roomId: roomKey,
           status: "live",
           isLive: true,
         });
 
+        console.log("Report:", report);
+
         if (!report) {
+          console.log("❌ Report Not Found");
           socket.emit("broadcast-not-found");
           return;
         }
 
-        const broadcasterId =
-          broadcasters[roomKey] ||
-          report.broadcasterSocketId;
+        console.log("DB Broadcaster Socket:", report.broadcasterSocketId);
 
-        if (!broadcasterId) {
-          socket.emit("broadcast-not-found");
-          return;
-        }
-
-        const broadcasterSocket =
-          io.sockets.sockets.get(broadcasterId);
-
-        if (!broadcasterSocket) {
-          socket.emit("broadcast-not-found");
-          return;
-        }
-
-        socket.roomId = roomKey;
-        socket.isViewer = true;
-
-        viewers[socket.id] = {
-          roomId: roomKey,
-          broadcasterId,
-        };
-
-        socket.emit("viewer-accepted", {
-          broadcasterId,
-        });
-
-        io.to(broadcasterId).emit("viewer", {
-          viewerId: socket.id,
-        });
-
-        const viewerCount = Object.values(viewers).filter(
-          (v) => v.roomId === roomKey
-        ).length;
-
-        io.to(broadcasterId).emit("viewer-count", {
-          count: viewerCount,
-        });
-
-        console.log(
-          "👂 Viewer Joined:",
-          socket.id,
-          "Room:",
-          roomKey
+        const broadcasterSocket = io.sockets.sockets.get(
+          report.broadcasterSocketId,
         );
-      } catch (error) {
-        console.log(error);
-        socket.emit("broadcast-not-found");
+
+        console.log("Socket Exists:", !!broadcasterSocket);
+      } catch (e) {
+        console.log(e);
       }
     });
 
@@ -177,7 +142,7 @@ module.exports = (io) => {
             isLive: false,
             broadcasterSocketId: null,
             endTime: new Date(),
-          }
+          },
         );
 
         Object.keys(viewers).forEach((id) => {
@@ -209,16 +174,13 @@ module.exports = (io) => {
           const viewer = viewers[socket.id];
 
           if (viewer) {
-            const viewerCount = Object.values(viewers).filter(
-              (v) => v.roomId === viewer.roomId
-            ).length - 1;
+            const viewerCount =
+              Object.values(viewers).filter((v) => v.roomId === viewer.roomId)
+                .length - 1;
 
-            io.to(viewer.broadcasterId).emit(
-              "viewer-count",
-              {
-                count: Math.max(0, viewerCount),
-              }
-            );
+            io.to(viewer.broadcasterId).emit("viewer-count", {
+              count: Math.max(0, viewerCount),
+            });
 
             delete viewers[socket.id];
           }
@@ -232,8 +194,7 @@ module.exports = (io) => {
           const roomKey = socket.roomId;
 
           setTimeout(async () => {
-            const currentBroadcaster =
-              broadcasters[roomKey];
+            const currentBroadcaster = broadcasters[roomKey];
 
             // reconnect ho gaya to skip
             if (currentBroadcaster !== socket.id) {
@@ -250,24 +211,19 @@ module.exports = (io) => {
                 isLive: false,
                 broadcasterSocketId: null,
                 endTime: new Date(),
-              }
+              },
             );
 
             Object.keys(viewers).forEach((id) => {
               if (viewers[id]?.roomId === roomKey) {
-                io.to(id).emit(
-                  "broadcast-stopped"
-                );
+                io.to(id).emit("broadcast-stopped");
                 delete viewers[id];
               }
             });
 
             delete broadcasters[roomKey];
 
-            console.log(
-              "🎤 Broadcaster Disconnected:",
-              roomKey
-            );
+            console.log("🎤 Broadcaster Disconnected:", roomKey);
           }, 30000); // 30 sec reconnect grace
         }
       } catch (error) {
