@@ -7,7 +7,7 @@ const connectDB = require("./config/db");
 const cors = require("cors");
 const session = require("express-session");
 const { MongoStore } = require("connect-mongo");
-const redis = require("./redis"); // ✅ import only
+
 const http = require("http");
 const { Server } = require("socket.io");
 

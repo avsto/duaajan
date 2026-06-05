@@ -1,5 +1,10 @@
 const LiveReport = require("../models/LiveReport");
-const redis = require("../redis"); // 🔥 Redis REQUIRED
+
+// roomId -> broadcasterSocketId
+const activeRooms = new Map();
+
+// socketId -> roomId (for cleanup)
+const socketToRoom = new Map();
 
 module.exports = (io) => {
   io.on("connection", (socket) => {
@@ -14,15 +19,9 @@ module.exports = (io) => {
 
         socket.join(roomKey);
 
-        // 🔥 SAVE LIVE STATE IN REDIS (IMPORTANT)
-        await redis.set(
-          `live:${roomKey}`,
-          socket.id,
-          "EX",
-          60 * 60 * 6, // 6 hours
-        );
+        activeRooms.set(roomKey, socket.id);
+        socketToRoom.set(socket.id, roomKey);
 
-        // optional DB update (history purpose)
         await LiveReport.findOneAndUpdate(
           { roomId: roomKey, status: "live" },
           {
@@ -30,7 +29,6 @@ module.exports = (io) => {
               broadcasterSocketId: socket.id,
             },
           },
-          { new: true },
         );
 
         console.log("🎤 Broadcaster Ready:", roomKey);
@@ -43,17 +41,16 @@ module.exports = (io) => {
     });
 
     // =====================================
-    // VIEWER JOIN (SAFE + RECONNECT FIX)
+    // VIEWER JOIN
     // =====================================
     socket.on("viewer", async ({ roomId }) => {
       try {
         const roomKey = String(roomId).trim();
 
-        // 🔥 GET FROM REDIS (NOT MEMORY)
-        const broadcasterSocketId = await redis.get(`live:${roomKey}`);
+        const broadcasterSocketId = activeRooms.get(roomKey);
 
         if (!broadcasterSocketId) {
-          console.log("❌ No live stream found");
+          console.log("❌ No broadcaster in memory");
           socket.emit("broadcast-not-found");
           return;
         }
@@ -75,11 +72,9 @@ module.exports = (io) => {
     });
 
     // =====================================
-    // OFFER (Broadcaster → Viewer)
+    // OFFER
     // =====================================
     socket.on("offer", ({ target, offer }) => {
-      if (!target || !offer) return;
-
       io.to(target).emit("offer", {
         sender: socket.id,
         offer,
@@ -87,11 +82,9 @@ module.exports = (io) => {
     });
 
     // =====================================
-    // ANSWER (Viewer → Broadcaster)
+    // ANSWER
     // =====================================
     socket.on("answer", ({ target, answer }) => {
-      if (!target || !answer) return;
-
       io.to(target).emit("answer", {
         sender: socket.id,
         answer,
@@ -99,10 +92,10 @@ module.exports = (io) => {
     });
 
     // =====================================
-    // ICE CANDIDATE
+    // CANDIDATE
     // =====================================
     socket.on("candidate", ({ target, candidate }) => {
-      if (!target || !candidate) return;
+      if (!target) return;
 
       io.to(target).emit("candidate", {
         sender: socket.id,
@@ -111,14 +104,13 @@ module.exports = (io) => {
     });
 
     // =====================================
-    // STOP BROADCAST (ONLY MANUAL)
+    // STOP BROADCAST (MANUAL)
     // =====================================
     socket.on("stop-broadcast", async ({ roomId }) => {
       try {
         const roomKey = String(roomId).trim();
 
-        // 🔥 REMOVE REDIS STATE
-        await redis.del(`live:${roomKey}`);
+        activeRooms.delete(roomKey);
 
         await LiveReport.findOneAndUpdate(
           { roomId: roomKey, status: "live" },
@@ -141,14 +133,34 @@ module.exports = (io) => {
     });
 
     // =====================================
-    // DISCONNECT (NO AUTO STOP)
+    // DISCONNECT (AUTO CLEANUP FIXED)
     // =====================================
     socket.on("disconnect", async () => {
       try {
         console.log("❌ Disconnected:", socket.id);
 
-        // ❗ IMPORTANT: DO NOT STOP LIVE ON DISCONNECT
-        // only log it
+        const roomKey = socketToRoom.get(socket.id);
+
+        if (!roomKey) return;
+
+        activeRooms.delete(roomKey);
+        socketToRoom.delete(socket.id);
+
+        await LiveReport.findOneAndUpdate(
+          { roomId: roomKey, status: "live" },
+          {
+            $set: {
+              status: "completed",
+              isLive: false,
+              endTime: new Date(),
+              broadcasterSocketId: null,
+            },
+          },
+        );
+
+        io.to(roomKey).emit("broadcast-stopped");
+
+        console.log("🎤 Auto stopped broadcast:", roomKey);
       } catch (err) {
         console.log("Disconnect Error:", err);
       }
