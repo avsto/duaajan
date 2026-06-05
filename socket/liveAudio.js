@@ -1,90 +1,56 @@
-const LiveReport = require("../models/LiveReport");
-
 const broadcasters = {};
+const listeners = {};
 
-module.exports = (io) => {
-  io.on("connection", (socket) => {
-    console.log("Connected:", socket.id);
-
-    // START BROADCAST
-
-    socket.on("broadcaster", ({ roomId }) => {
-      broadcasters[roomId] = socket.id;
-
-      socket.join(roomId);
-
-      console.log("Broadcaster Started:", roomId);
-    });
-
-    // VIEWER JOIN
-
-    socket.on("viewer", ({ roomId }) => {
-      socket.join(roomId);
-
-      console.log("Viewer Joined:", socket.id);
-
-      const broadcasterId = broadcasters[roomId];
-
-      if (broadcasterId) {
-        io.to(broadcasterId).emit("viewer", {
-          viewerId: socket.id,
-        });
-      } else {
-        io.to(socket.id).emit("broadcast-not-found");
-      }
-    });
-
-    // OFFER
-
-    socket.on("offer", ({ target, offer }) => {
-      io.to(target).emit("offer", {
-        sender: socket.id,
-        offer,
-      });
-    });
-
-    // ANSWER
-
-    socket.on("answer", ({ target, answer }) => {
-      io.to(target).emit("answer", {
-        sender: socket.id,
-        answer,
-      });
-    });
-
-    // ICE CANDIDATE
-
-    socket.on("candidate", ({ target, candidate }) => {
-      if (target) {
-        io.to(target).emit("candidate", {
-          sender: socket.id,
-          candidate,
-        });
-      }
-    });
-
-    // STOP BROADCAST
-
-    socket.on("stop-broadcast", ({ roomId }) => {
-      console.log("Broadcast Stopped:", roomId);
-
-      io.to(roomId).emit("broadcast-stopped");
-
-      delete broadcasters[roomId];
-    });
-
-    // DISCONNECT
-
-    socket.on("disconnect", () => {
-      console.log("Disconnected:", socket.id);
-
-      for (let roomId in broadcasters) {
-        if (broadcasters[roomId] === socket.id) {
-          io.to(roomId).emit("broadcast-stopped");
-
-          delete broadcasters[roomId];
-        }
-      }
-    });
+io.on("connection", (socket) => {
+  socket.on("broadcaster", ({ roomId }) => {
+    broadcasters[roomId] = socket.id;
   });
-};
+
+  socket.on("join-listener", ({ roomId }) => {
+    listeners[socket.id] = roomId;
+
+    const broadcasterId = broadcasters[roomId];
+
+    if (broadcasterId) {
+      io.to(broadcasterId).emit("new-listener", socket.id);
+    }
+  });
+
+  socket.on("offer", (data) => {
+    io.to(data.listenerId).emit("offer", data.offer);
+  });
+
+  socket.on("answer", (data) => {
+    const roomId = listeners[socket.id];
+
+    const broadcasterId = broadcasters[roomId];
+
+    if (broadcasterId) {
+      io.to(broadcasterId).emit("answer", {
+        listenerId: socket.id,
+        answer: data.answer,
+      });
+    }
+  });
+
+  socket.on("broadcaster-candidate", (data) => {
+    io.to(data.listenerId).emit("candidate", data.candidate);
+  });
+
+  socket.on("listener-candidate", (data) => {
+    const roomId = listeners[socket.id];
+
+    const broadcasterId = broadcasters[roomId];
+
+    if (broadcasterId) {
+      io.to(broadcasterId).emit("listener-candidate", {
+        listenerId: socket.id,
+        candidate: data.candidate,
+      });
+    }
+  });
+
+  socket.on("disconnect", () => {
+    delete listeners[socket.id];
+  });
+});
