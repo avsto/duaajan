@@ -12,7 +12,7 @@ const http = require("http");
 const { WebSocketServer } = require("ws");
 
 // ✅ IMPORT SEPARATED WEBRTC ENGINE MODULE
-const { initWebRTCSignaling } = require("./webrtcEngine");
+const { initWebRTCSignaling } = require("./socket/webrtcEngine");
 
 const app = express();
 const server = http.createServer(app);

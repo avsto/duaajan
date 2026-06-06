@@ -12,9 +12,9 @@ router.get("/about", (req, res) => {
 });
 
 // Contact
-router.get("/contact", (req, res) => {
-  res.render("fronted/contact");
-});
+// router.get("/contact", (req, res) => {
+//   res.render("fronted/contact");
+// });
 
 // Privacy Policy
 router.get("/privacy-policy", (req, res) => {
