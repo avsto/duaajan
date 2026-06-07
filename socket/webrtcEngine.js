@@ -35,7 +35,7 @@ const initWebRTCSignaling = (wss) => {
     ws.on("message", (message) => {
       try {
         const data = JSON.parse(message);
-        const roomid = data.roomid; // Maps exactly from the parsed data stream
+        const roomid = data.roomid;
 
         switch (data.type) {
           case "register-broadcaster":
@@ -64,7 +64,7 @@ const initWebRTCSignaling = (wss) => {
 
             syncViewersCounter(roomid);
 
-            // 🔴 LIVE RE-NEGOTIATION BRIDGE:
+            // Naye user ke aate hi Broadcaster se dynamic fresh offer request karna
             if (
               rooms[roomid].broadcaster &&
               rooms[roomid].broadcaster.readyState === WebSocket.OPEN
@@ -81,7 +81,6 @@ const initWebRTCSignaling = (wss) => {
           case "offer":
             if (currentRoomId && rooms[currentRoomId]) {
               rooms[currentRoomId].listeners.forEach((listener) => {
-                // ✅ FIX: Sirf un listeners ko offer bhejo jo open hain aur current context se linked hain
                 if (listener.readyState === WebSocket.OPEN) {
                   listener.send(
                     JSON.stringify({ type: "offer", sdp: data.sdp }),
@@ -121,7 +120,6 @@ const initWebRTCSignaling = (wss) => {
                   }
                 });
               } else {
-                // ✅ FIX: Listener se aaya candidate sirf broadaster ke paas jana chahiye, baaki listeners ke paas nahi!
                 if (
                   rooms[currentRoomId].broadcaster &&
                   rooms[currentRoomId].broadcaster.readyState === WebSocket.OPEN
@@ -157,20 +155,17 @@ const initWebRTCSignaling = (wss) => {
         rooms[currentRoomId].broadcaster = null;
       } else {
         rooms[currentRoomId].listeners.delete(ws);
-        console.log(
-          `ℹ️ Client left structural dynamic loop channels for: ${currentRoomId}`,
-        );
+        console.log(`ℹ️ Client left channels for: ${currentRoomId}`);
         syncViewersCounter(currentRoomId);
       }
 
-      // Memory Allocation Cleanup bounds
       if (
         !rooms[currentRoomId].broadcaster &&
         rooms[currentRoomId].listeners.size === 0
       ) {
         delete rooms[currentRoomId];
         console.log(
-          `🧹 Structural GC sweep finalized map arrays for empty channel: ${currentRoomId}`,
+          `🧹 Structural GC sweep finalized for empty channel: ${currentRoomId}`,
         );
       }
     });
