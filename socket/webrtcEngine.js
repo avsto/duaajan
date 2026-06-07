@@ -1,6 +1,6 @@
 const { WebSocket } = require("ws");
-const LiveReport = require("./models/LiveReport");
-const User = require("./models/User");
+const LiveReport = require("../models/LiveReport");
+const User = require("../models/User");
 
 // Rooms Map Matrix: { [roomid]: { broadcaster: ws, listeners: Map(), reportId: id, isEngineActive: false } }
 let rooms = {};
