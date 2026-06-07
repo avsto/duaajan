@@ -1,17 +1,21 @@
 const { WebSocket } = require("ws");
+const LiveReport = require("./models/LiveReport");
+const User = require("./models/User");
 
-// Dynamic Rooms Map Matrix: { [roomid]: { broadcaster: ws, listeners: Set(), isEngineActive: false } }
+// Rooms Map Matrix: { [roomid]: { broadcaster: ws, listeners: Map(), reportId: id, isEngineActive: false } }
 let rooms = {};
 
 const initWebRTCSignaling = (wss) => {
-  console.log("⚡ WebRTC Multi-Room Distribution Mesh Initialized");
+  console.log(
+    "⚡ WebRTC Multi-Room Distribution Mesh Engine Online (API-Synced)",
+  );
 
   wss.on("connection", (ws) => {
     let currentRoomId = null;
     let isBroadcaster = false;
+    let listenerDatabaseId = null;
 
-    // View updates matrix builder
-    const syncViewersCounter = (roomid) => {
+    const syncViewersCounter = async (roomid) => {
       if (!rooms[roomid]) return;
       const count = rooms[roomid].listeners.size;
       const metricsPayload = JSON.stringify({
@@ -25,17 +29,29 @@ const initWebRTCSignaling = (wss) => {
       ) {
         rooms[roomid].broadcaster.send(metricsPayload);
       }
-      rooms[roomid].listeners.forEach((listener) => {
-        if (listener.readyState === WebSocket.OPEN) {
-          listener.send(metricsPayload);
+      rooms[roomid].listeners.forEach((clientWs) => {
+        if (clientWs.readyState === WebSocket.OPEN) {
+          clientWs.send(metricsPayload);
         }
       });
+
+      // 📊 LIVE ANALYTICS DATA SYNC
+      if (rooms[roomid].reportId) {
+        try {
+          await LiveReport.findByIdAndUpdate(rooms[roomid].reportId, {
+            $set: { totalListeners: count },
+            $max: { maxListeners: count }, // Peak viewers tracker loop
+          });
+        } catch (dbErr) {
+          console.error("❌ Live report analytics sync loop failure:", dbErr);
+        }
+      }
     };
 
-    ws.on("message", (message) => {
+    ws.on("message", async (message) => {
       try {
         const data = JSON.parse(message);
-        const roomid = data.roomid;
+        const roomid = data.roomid || data.roomId;
 
         switch (data.type) {
           case "register-broadcaster":
@@ -46,14 +62,17 @@ const initWebRTCSignaling = (wss) => {
             if (!rooms[roomid]) {
               rooms[roomid] = {
                 broadcaster: null,
-                listeners: new Set(),
+                listeners: new Map(),
+                reportId: null,
                 isEngineActive: false,
               };
             }
             rooms[roomid].broadcaster = ws;
-            rooms[roomid].isEngineActive = false; // Fresh initialization par state reset
+            rooms[roomid].isEngineActive = false;
+            rooms[roomid].reportId = data.reportId || null; // API se aayi hui original reportId mapping
+
             console.log(
-              `📢 Master Stream Node Registered for Room Key: [${roomid}]`,
+              `📢 Broadcaster Stream Engine Hooked to Report Matrix: [${rooms[roomid].reportId}]`,
             );
             syncViewersCounter(roomid);
             break;
@@ -62,34 +81,52 @@ const initWebRTCSignaling = (wss) => {
             if (!roomid) return;
             currentRoomId = roomid;
             isBroadcaster = false;
+            listenerDatabaseId = data.userId || null;
 
             if (!rooms[roomid]) {
               rooms[roomid] = {
                 broadcaster: null,
-                listeners: new Set(),
+                listeners: new Map(),
+                reportId: null,
                 isEngineActive: false,
               };
             }
-            rooms[roomid].listeners.add(ws);
-            console.log(`🎧 Client Subscriber added to channel: [${roomid}]`);
+
+            rooms[roomid].listeners.set(ws, {
+              joinedAt: new Date(),
+              userId: listenerDatabaseId,
+            });
+            console.log(
+              `🎧 Listener sequence initialization completed for room: ${roomid}`,
+            );
+
+            if (rooms[roomid].reportId) {
+              try {
+                await LiveReport.findByIdAndUpdate(rooms[roomid].reportId, {
+                  $push: {
+                    listeners: {
+                      userId: listenerDatabaseId,
+                      joinedAt: new Date(),
+                    },
+                  },
+                });
+              } catch (dbErr) {
+                console.error(
+                  "❌ Failed to push tracking listener metadata to MongoDB:",
+                  dbErr,
+                );
+              }
+            }
 
             syncViewersCounter(roomid);
 
-            // 🔴 CORRECTION: Tabhi offer mangenge jab Broadcaster ka WebRTC Setup complete ho
             if (
               rooms[roomid].broadcaster &&
               rooms[roomid].broadcaster.readyState === WebSocket.OPEN
             ) {
               if (rooms[roomid].isEngineActive) {
-                console.log(
-                  `🔄 Requesting fresh offer from ACTIVE broadcaster for room: ${roomid}`,
-                );
                 rooms[roomid].broadcaster.send(
                   JSON.stringify({ type: "request-offer" }),
-                );
-              } else {
-                console.log(
-                  `⏳ Broadcaster socket is open but WebRTC Engine is initializing. Waiting...`,
                 );
               }
             }
@@ -97,12 +134,10 @@ const initWebRTCSignaling = (wss) => {
 
           case "offer":
             if (currentRoomId && rooms[currentRoomId]) {
-              // 🔴 LOCK: Broadcaster ne offer de diya, matlab engine ab active aur ready hai
               rooms[currentRoomId].isEngineActive = true;
-
-              rooms[currentRoomId].listeners.forEach((listener) => {
-                if (listener.readyState === WebSocket.OPEN) {
-                  listener.send(
+              rooms[currentRoomId].listeners.forEach((clientObj, clientWs) => {
+                if (clientWs.readyState === WebSocket.OPEN) {
+                  clientWs.send(
                     JSON.stringify({ type: "offer", sdp: data.sdp }),
                   );
                 }
@@ -129,16 +164,18 @@ const initWebRTCSignaling = (wss) => {
           case "ice-candidate":
             if (currentRoomId && rooms[currentRoomId]) {
               if (isBroadcaster) {
-                rooms[currentRoomId].listeners.forEach((listener) => {
-                  if (listener.readyState === WebSocket.OPEN) {
-                    listener.send(
-                      JSON.stringify({
-                        type: "ice-candidate",
-                        candidate: data.candidate,
-                      }),
-                    );
-                  }
-                });
+                rooms[currentRoomId].listeners.forEach(
+                  (clientObj, clientWs) => {
+                    if (clientWs.readyState === WebSocket.OPEN) {
+                      clientWs.send(
+                        JSON.stringify({
+                          type: "ice-candidate",
+                          candidate: data.candidate,
+                        }),
+                      );
+                    }
+                  },
+                );
               } else {
                 if (
                   rooms[currentRoomId].broadcaster &&
@@ -154,40 +191,84 @@ const initWebRTCSignaling = (wss) => {
               }
             }
             break;
+
+          case "unregister-broadcaster":
+            if (currentRoomId && rooms[currentRoomId]) {
+              await closeLiveSessionLog(currentRoomId);
+            }
+            break;
         }
       } catch (err) {
-        console.error("❌ Signalling processing data parsing fault:", err);
+        console.error("❌ Signalling incoming packet compilation crash:", err);
       }
     });
 
-    ws.on("close", () => {
+    const closeLiveSessionLog = async (roomId) => {
+      if (!rooms[roomId]) return;
+      console.log(
+        `🧹 Compiling stream termination protocol for channel: ${roomId}`,
+      );
+
+      const currentReportId = rooms[roomId].reportId;
+
+      rooms[roomId].listeners.forEach((clientObj, clientWs) => {
+        if (clientWs.readyState === WebSocket.OPEN) {
+          clientWs.send(JSON.stringify({ type: "broadcaster-offline" }));
+        }
+      });
+
+      if (currentReportId) {
+        try {
+          const report = await LiveReport.findById(currentReportId);
+          if (report && report.status === "live") {
+            const end = new Date();
+            const durationSec = Math.round(
+              (end.getTime() - report.startTime.getTime()) / 1000,
+            );
+
+            await LiveReport.findByIdAndUpdate(currentReportId, {
+              $set: {
+                endTime: end,
+                duration: durationSec,
+                status: "completed",
+                isLive: false,
+              },
+            });
+
+            await User.findByIdAndUpdate(roomId, {
+              $set: { isLive: false },
+            });
+
+            console.log(
+              `💾 Live session compiled. Runtime: ${durationSec}s recorded.`,
+            );
+          }
+        } catch (dbErr) {
+          console.error("❌ Database final records update exception:", dbErr);
+        }
+      }
+
+      delete rooms[roomId];
+    };
+
+    ws.on("close", async () => {
       if (!currentRoomId || !rooms[currentRoomId]) return;
 
       if (isBroadcaster) {
-        console.log(
-          `❌ Channel Streamer Dropped out for room: ${currentRoomId}`,
-        );
-        rooms[currentRoomId].listeners.forEach((listener) => {
-          if (listener.readyState === WebSocket.OPEN) {
-            listener.send(JSON.stringify({ type: "broadcaster-offline" }));
-          }
-        });
-        rooms[currentRoomId].broadcaster = null;
-        rooms[currentRoomId].isEngineActive = false;
+        await closeLiveSessionLog(currentRoomId);
       } else {
         rooms[currentRoomId].listeners.delete(ws);
-        console.log(`ℹ️ Client left channels for: ${currentRoomId}`);
-        syncViewersCounter(currentRoomId);
-      }
-
-      if (
-        !rooms[currentRoomId].broadcaster &&
-        rooms[currentRoomId].listeners.size === 0
-      ) {
-        delete rooms[currentRoomId];
         console.log(
-          `🧹 Structural GC sweep finalized for empty channel: ${currentRoomId}`,
+          `ℹ️ Listener disconnected from active room node: ${currentRoomId}`,
         );
+        syncViewersCounter(currentRoomId);
+
+        if (
+          !rooms[currentRoomId].broadcaster &&
+          rooms[currentRoomId].listeners.size === 0
+        ) {
+          delete rooms[currentRoomId];
+        }
       }
     });
   });
