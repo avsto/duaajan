@@ -1,6 +1,6 @@
 const { WebSocket } = require("ws");
 
-// Dynamic Rooms Map Matrix: { [roomid]: { broadcaster: ws, listeners: Set() } }
+// Dynamic Rooms Map Matrix: { [roomid]: { broadcaster: ws, listeners: Set(), isEngineActive: false } }
 let rooms = {};
 
 const initWebRTCSignaling = (wss) => {
@@ -43,9 +43,15 @@ const initWebRTCSignaling = (wss) => {
             currentRoomId = roomid;
             isBroadcaster = true;
 
-            if (!rooms[roomid])
-              rooms[roomid] = { broadcaster: null, listeners: new Set() };
+            if (!rooms[roomid]) {
+              rooms[roomid] = {
+                broadcaster: null,
+                listeners: new Set(),
+                isEngineActive: false,
+              };
+            }
             rooms[roomid].broadcaster = ws;
+            rooms[roomid].isEngineActive = false; // Fresh initialization par state reset
             console.log(
               `📢 Master Stream Node Registered for Room Key: [${roomid}]`,
             );
@@ -57,29 +63,43 @@ const initWebRTCSignaling = (wss) => {
             currentRoomId = roomid;
             isBroadcaster = false;
 
-            if (!rooms[roomid])
-              rooms[roomid] = { broadcaster: null, listeners: new Set() };
+            if (!rooms[roomid]) {
+              rooms[roomid] = {
+                broadcaster: null,
+                listeners: new Set(),
+                isEngineActive: false,
+              };
+            }
             rooms[roomid].listeners.add(ws);
             console.log(`🎧 Client Subscriber added to channel: [${roomid}]`);
 
             syncViewersCounter(roomid);
 
-            // Naye user ke aate hi Broadcaster se dynamic fresh offer request karna
+            // 🔴 CORRECTION: Tabhi offer mangenge jab Broadcaster ka WebRTC Setup complete ho
             if (
               rooms[roomid].broadcaster &&
               rooms[roomid].broadcaster.readyState === WebSocket.OPEN
             ) {
-              console.log(
-                `🔄 Requesting fresh offer from broadcaster for room: ${roomid}`,
-              );
-              rooms[roomid].broadcaster.send(
-                JSON.stringify({ type: "request-offer" }),
-              );
+              if (rooms[roomid].isEngineActive) {
+                console.log(
+                  `🔄 Requesting fresh offer from ACTIVE broadcaster for room: ${roomid}`,
+                );
+                rooms[roomid].broadcaster.send(
+                  JSON.stringify({ type: "request-offer" }),
+                );
+              } else {
+                console.log(
+                  `⏳ Broadcaster socket is open but WebRTC Engine is initializing. Waiting...`,
+                );
+              }
             }
             break;
 
           case "offer":
             if (currentRoomId && rooms[currentRoomId]) {
+              // 🔴 LOCK: Broadcaster ne offer de diya, matlab engine ab active aur ready hai
+              rooms[currentRoomId].isEngineActive = true;
+
               rooms[currentRoomId].listeners.forEach((listener) => {
                 if (listener.readyState === WebSocket.OPEN) {
                   listener.send(
@@ -153,6 +173,7 @@ const initWebRTCSignaling = (wss) => {
           }
         });
         rooms[currentRoomId].broadcaster = null;
+        rooms[currentRoomId].isEngineActive = false;
       } else {
         rooms[currentRoomId].listeners.delete(ws);
         console.log(`ℹ️ Client left channels for: ${currentRoomId}`);
