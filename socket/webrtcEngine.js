@@ -11,6 +11,11 @@ const initWebRTCSignaling = (io) => {
     socket.on("broadcaster", ({ roomId }) => {
       broadcasters[roomId] = socket.id;
 
+      console.log("===== BROADCAST START =====");
+      console.log("Room:", roomId);
+      console.log("Socket:", socket.id);
+      console.log("Broadcasters:", broadcasters);
+
       socket.roomId = roomId;
       socket.role = "broadcaster";
 
@@ -23,7 +28,13 @@ const initWebRTCSignaling = (io) => {
     // VIEWER JOIN
     // ==========================
     socket.on("viewer", ({ roomId }) => {
+      console.log("===== VIEWER JOIN =====");
+      console.log("Room:", roomId);
+      console.log("Broadcasters:", broadcasters);
+
       const broadcasterId = broadcasters[roomId];
+
+      console.log("Found Broadcaster:", broadcasterId);
 
       if (!broadcasterId) {
         socket.emit("broadcast-not-found");
