@@ -23,8 +23,7 @@ connectDB();
 // ======================================
 // WEBSOCKET SIGNALING SERVER (INTEGRATED)
 // ======================================
-// Shared native instance running directly on Express HTTP engine (Port 5000 / Proxy Target)
-const server = http.createServer(app);
+// Shared native instance running directly on Express HTTP engine (Port 5000 / Proxy Target
 
 const io = new Server(server, {
   cors: {
