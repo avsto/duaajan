@@ -94,7 +94,19 @@ const initWebRTCSignaling = (io) => {
     // STOP BROADCAST
     // ==========================
     socket.on("stop-broadcast", ({ roomId }) => {
-      console.log(`Broadcast Stopped: ${roomId}`);
+      console.log("========== STOP REQUEST ==========");
+      console.log("Room:", roomId);
+      console.log("From Socket:", socket.id);
+      console.log("Role:", socket.role);
+      console.log("Current Broadcaster:", broadcasters[roomId]);
+      console.log("==================================");
+
+      if (broadcasters[roomId] !== socket.id) {
+        console.log("Unauthorized stop request");
+        return;
+      }
+
+      console.log("Valid stop request");
 
       io.to(roomId).emit("broadcast-stopped");
 
