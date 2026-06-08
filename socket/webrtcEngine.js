@@ -1,17 +1,19 @@
 const broadcasters = {}; // Key: roomId -> Value: broadcasterSocketId
-const viewers = {}; // Key: viewerSocketId -> Value: { roomId, broadcasterId }
+const viewers = {};      // Key: viewerSocketId -> Value: { roomId, broadcasterId }
 
 const initWebRTCSignaling = (io) => {
+  // CORS ko handle karne ke liye aap app.js/server.js mein bhi 'origin: *' zaroor check karein
+
   io.on("connection", (socket) => {
-    console.log("Connected:", socket.id);
+    console.log("Connected globally:", socket.id);
 
     // ==========================
     // BROADCASTER START
     // ==========================
     socket.on("broadcaster", ({ roomId }) => {
-      // Prevent multiple broadcasters overwriting an active room accidentally
+      if (!roomId) return;
+      
       broadcasters[roomId] = socket.id;
-
       socket.roomId = roomId;
       socket.role = "broadcaster";
 
@@ -23,9 +25,12 @@ const initWebRTCSignaling = (io) => {
     // VIEWER JOIN
     // ==========================
     socket.on("viewer", ({ roomId }) => {
+      if (!roomId) return;
+
       const broadcasterId = broadcasters[roomId];
 
       if (!broadcasterId) {
+        console.log(`Room not found: ${roomId} for viewer: ${socket.id}`);
         socket.emit("broadcast-not-found");
         return;
       }
@@ -41,7 +46,7 @@ const initWebRTCSignaling = (io) => {
       socket.join(roomId);
       console.log(`Viewer ${socket.id} joined Room: ${roomId}`);
 
-      // Alert the specific broadcaster so they can initiate the WebRTC Offer
+      // Broadcaster ko alert karein taaki Offer initiate ho sake
       io.to(broadcasterId).emit("viewer", {
         viewerId: socket.id,
       });
@@ -51,6 +56,7 @@ const initWebRTCSignaling = (io) => {
     // SDP OFFER & ANSWER SIGNALING
     // ==========================
     socket.on("offer", ({ target, offer }) => {
+      if (!target) return;
       io.to(target).emit("offer", {
         sender: socket.id,
         offer,
@@ -58,6 +64,7 @@ const initWebRTCSignaling = (io) => {
     });
 
     socket.on("answer", ({ target, answer }) => {
+      if (!target) return;
       io.to(target).emit("answer", {
         sender: socket.id,
         answer,
@@ -69,7 +76,6 @@ const initWebRTCSignaling = (io) => {
     // ==========================
     socket.on("candidate", ({ target, candidate }) => {
       if (!target) return;
-
       io.to(target).emit("candidate", {
         sender: socket.id,
         candidate,
@@ -80,6 +86,8 @@ const initWebRTCSignaling = (io) => {
     // STOP BROADCAST (Manual Trigger)
     // ==========================
     socket.on("stop-broadcast", ({ roomId }) => {
+      if (!roomId) return;
+
       if (broadcasters[roomId] !== socket.id) {
         console.log("Unauthorized stop request from:", socket.id);
         return;
@@ -91,38 +99,41 @@ const initWebRTCSignaling = (io) => {
     // ==========================
     // DISCONNECT (Unexpected or App Close)
     // ==========================
-    socket.on("disconnect", () => {
-      console.log("Disconnected:", socket.id);
+    socket.on("disconnect", (reason) => {
+      console.log(`Disconnected: ${socket.id} | Reason: ${reason}`);
 
-      // Scenario A: Broadcaster falls off
-      if (socket.role === "broadcaster") {
-        const roomId = socket.roomId;
-        if (roomId && broadcasters[roomId] === socket.id) {
-          handleBroadcasterTeardown(io, roomId);
-        }
+      // FIX: Sirf socket.role par depend na rahein, registries mein find karein
+      
+      // 1. Check karein kya yeh socket kisi room ka broadcaster tha?
+      let foundRoomId = socket.roomId;
+      if (!foundRoomId) {
+        // Fallback: Pure object registry mein check karein
+        foundRoomId = Object.keys(broadcasters).find(room => broadcasters[room] === socket.id);
       }
 
-      // Scenario B: Viewer falls off (FIXED: Added cross-communication)
-      if (socket.role === "viewer" || viewers[socket.id]) {
+      if (foundRoomId && broadcasters[foundRoomId] === socket.id) {
+        console.log(`Broadcaster disconnected from Room: ${foundRoomId}`);
+        handleBroadcasterTeardown(io, foundRoomId);
+        return; // Teardown ho gaya, aage check karne ki zaroorat nahi
+      }
+
+      // 2. Check karein kya yeh socket koi active viewer tha?
+      if (viewers[socket.id]) {
         const viewerData = viewers[socket.id];
+        const { roomId, broadcasterId } = viewerData;
 
-        if (viewerData) {
-          const { roomId, broadcasterId } = viewerData;
+        console.log(`Viewer ${socket.id} clean disconnected from Room: ${roomId}`);
 
-          console.log(`Viewer ${socket.id} disconnected from Room ${roomId}`);
+        if (broadcasterId) {
+          // Broadcaster ko notify karein taaki WebRTC instances saaf hon
+          io.to(broadcasterId).emit("candidate", {
+            sender: socket.id,
+            candidate: null,
+          });
 
-          // CRITICAL FIX: Notify the broadcaster so they tear down the WebRTC Peer Connection!
-          if (broadcasterId) {
-            io.to(broadcasterId).emit("candidate", {
-              sender: socket.id,
-              candidate: null, // Passing null candidate tells WebRTC to close connections
-            });
-
-            // Re-trigger peer connection cleanup on broadcaster by passing a closed instruction
-            io.to(broadcasterId).emit("viewer-disconnected", {
-              viewerId: socket.id,
-            });
-          }
+          io.to(broadcasterId).emit("viewer-disconnected", {
+            viewerId: socket.id,
+          });
         }
 
         delete viewers[socket.id];
@@ -132,23 +143,24 @@ const initWebRTCSignaling = (io) => {
 };
 
 /**
- * Clean helper function to handle complex multi-step broadcaster teardowns safely
+ * Teardown helper block for room cleanups
  */
 const handleBroadcasterTeardown = (io, roomId) => {
+  if (!roomId) return;
   console.log(`Cleaning up Room: ${roomId}`);
 
-  // 1. Notify all listeners in the socket room instantly
+  // 1. Notify all viewers instantly
   io.to(roomId).emit("broadcast-stopped");
 
-  // 2. Erase broadcaster from global state registry
+  // 2. Erase broadcaster tracking
   delete broadcasters[roomId];
 
-  // 3. Purge related viewers and forcefully eject them from Socket.io tracking rooms
+  // 3. Purge related viewers and forcefully eject them from Socket.io virtual rooms
   Object.keys(viewers).forEach((viewerId) => {
     if (viewers[viewerId]?.roomId === roomId) {
       const viewerSocket = io.sockets.sockets.get(viewerId);
       if (viewerSocket) {
-        viewerSocket.leave(roomId); // Prevent memory leaks inside Socket.io
+        viewerSocket.leave(roomId);
       }
       delete viewers[viewerId];
     }

@@ -13,7 +13,6 @@ const http = require("http");
 const app = express();
 const server = http.createServer(app);
 
-const { Server } = require("socket.io");
 
 // ======================================
 // DATABASE
@@ -25,10 +24,13 @@ connectDB();
 // ======================================
 // Shared native instance running directly on Express HTTP engine (Port 5000 / Proxy Target
 
-const io = new Server(server, {
+const io = require('socket.io')(server, {
   cors: {
-    origin: "*",
+    origin: "*",                 // Sabhi dynamic origins ko access allow karein
+    methods: ["GET", "POST"],
+    credentials: true
   },
+  allowEIO3: true                // React Native socket.io-client version compatibility fix
 });
 
 const { initWebRTCSignaling } = require("./socket/webrtcEngine");
