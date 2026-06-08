@@ -1,88 +1,112 @@
 const broadcasters = {};
 const viewers = {};
 
+const removeRoomViewers = (roomId) => {
+  Object.keys(viewers).forEach((viewerId) => {
+    if (viewers[viewerId]?.roomId === roomId) {
+      delete viewers[viewerId];
+    }
+  });
+};
+
 const initWebRTCSignaling = (io) => {
   io.on("connection", (socket) => {
     console.log("Connected:", socket.id);
 
-    // ==========================
+    // =====================================
     // BROADCASTER START
-    // ==========================
+    // =====================================
     socket.on("broadcaster", ({ roomId }) => {
-      broadcasters[roomId] = socket.id;
+      try {
+        if (!roomId) return;
 
-      console.log("===== BROADCAST START =====");
-      console.log("Room:", roomId);
-      console.log("Socket:", socket.id);
-      console.log("Broadcasters:", broadcasters);
+        broadcasters[roomId] = socket.id;
 
-      socket.roomId = roomId;
-      socket.role = "broadcaster";
+        socket.roomId = roomId;
+        socket.role = "broadcaster";
 
-      socket.join(roomId);
+        socket.join(roomId);
 
-      console.log(`Broadcaster Started: ${roomId}`);
-    });
-
-    // ==========================
-    // VIEWER JOIN
-    // ==========================
-    socket.on("viewer", ({ roomId }) => {
-      console.log("===== VIEWER JOIN =====");
-      console.log("Room:", roomId);
-      console.log("Broadcasters:", broadcasters);
-
-      const broadcasterId = broadcasters[roomId];
-
-      console.log("Found Broadcaster:", broadcasterId);
-
-      if (!broadcasterId) {
-        socket.emit("broadcast-not-found");
-        return;
+        console.log("===== BROADCAST START =====");
+        console.log("Room:", roomId);
+        console.log("Socket:", socket.id);
+        console.log("Broadcasters:", broadcasters);
+      } catch (err) {
+        console.log("Broadcaster Error:", err);
       }
-
-      socket.roomId = roomId;
-      socket.role = "viewer";
-
-      viewers[socket.id] = {
-        roomId,
-        broadcasterId,
-      };
-
-      socket.join(roomId);
-
-      console.log(`Viewer Joined: ${socket.id}`);
-
-      io.to(broadcasterId).emit("viewer", {
-        viewerId: socket.id,
-      });
     });
 
-    // ==========================
+    // =====================================
+    // VIEWER JOIN
+    // =====================================
+    socket.on("viewer", ({ roomId }) => {
+      try {
+        console.log("===== VIEWER JOIN =====");
+        console.log("Room:", roomId);
+
+        const broadcasterId = broadcasters[roomId];
+
+        console.log("Found Broadcaster:", broadcasterId);
+
+        if (!broadcasterId) {
+          socket.emit("broadcast-not-found");
+          return;
+        }
+
+        // broadcaster khud viewer na ban jaye
+        if (broadcasterId === socket.id) {
+          return;
+        }
+
+        socket.roomId = roomId;
+        socket.role = "viewer";
+
+        viewers[socket.id] = {
+          roomId,
+          broadcasterId,
+        };
+
+        socket.join(roomId);
+
+        console.log("Viewer Joined:", socket.id);
+
+        io.to(broadcasterId).emit("viewer", {
+          viewerId: socket.id,
+        });
+      } catch (err) {
+        console.log("Viewer Join Error:", err);
+      }
+    });
+
+    // =====================================
     // OFFER
-    // ==========================
+    // =====================================
     socket.on("offer", ({ target, offer }) => {
+      if (!target) return;
+
       io.to(target).emit("offer", {
         sender: socket.id,
         offer,
       });
     });
 
-    // ==========================
+    // =====================================
     // ANSWER
-    // ==========================
+    // =====================================
     socket.on("answer", ({ target, answer }) => {
+      if (!target) return;
+
       io.to(target).emit("answer", {
         sender: socket.id,
         answer,
       });
     });
 
-    // ==========================
+    // =====================================
     // ICE CANDIDATE
-    // ==========================
+    // =====================================
     socket.on("candidate", ({ target, candidate }) => {
-      if (!target) return;
+      if (!target || !candidate) return;
 
       io.to(target).emit("candidate", {
         sender: socket.id,
@@ -90,42 +114,46 @@ const initWebRTCSignaling = (io) => {
       });
     });
 
-    // ==========================
+    // =====================================
     // STOP BROADCAST
-    // ==========================
+    // =====================================
     socket.on("stop-broadcast", ({ roomId }) => {
-      console.log("========== STOP REQUEST ==========");
-      console.log("Room:", roomId);
-      console.log("From Socket:", socket.id);
-      console.log("Role:", socket.role);
-      console.log("Current Broadcaster:", broadcasters[roomId]);
-      console.log("==================================");
+      try {
+        console.log("========== STOP REQUEST ==========");
+        console.log("Room:", roomId);
+        console.log("From Socket:", socket.id);
+        console.log("Role:", socket.role);
+        console.log("Current Broadcaster:", broadcasters[roomId]);
+        console.log("==================================");
 
-      if (broadcasters[roomId] !== socket.id) {
-        console.log("Unauthorized stop request");
-        return;
-      }
+        if (!roomId) return;
 
-      console.log("Valid stop request");
-
-      io.to(roomId).emit("broadcast-stopped");
-
-      delete broadcasters[roomId];
-
-      Object.keys(viewers).forEach((viewerId) => {
-        if (viewers[viewerId]?.roomId === roomId) {
-          delete viewers[viewerId];
+        if (broadcasters[roomId] !== socket.id) {
+          console.log("Unauthorized stop request");
+          return;
         }
-      });
+
+        console.log("Valid stop request");
+
+        io.to(roomId).emit("broadcast-stopped");
+
+        delete broadcasters[roomId];
+
+        removeRoomViewers(roomId);
+
+        console.log(`Broadcast stopped successfully: ${roomId}`);
+      } catch (err) {
+        console.log("Stop Broadcast Error:", err);
+      }
     });
 
-    // ==========================
+    // =====================================
     // DISCONNECT
-    // ==========================
-    socket.on("disconnect", () => {
-      console.log("Disconnected:", socket.id);
+    // =====================================
+    socket.on("disconnect", (reason) => {
+      console.log("Disconnected:", socket.id, reason);
 
-      // Broadcaster disconnected
+      // broadcaster disconnect
       if (socket.role === "broadcaster") {
         const roomId = socket.roomId;
 
@@ -134,17 +162,13 @@ const initWebRTCSignaling = (io) => {
 
           delete broadcasters[roomId];
 
-          Object.keys(viewers).forEach((viewerId) => {
-            if (viewers[viewerId]?.roomId === roomId) {
-              delete viewers[viewerId];
-            }
-          });
+          removeRoomViewers(roomId);
 
           console.log(`Broadcaster disconnected: ${roomId}`);
         }
       }
 
-      // Viewer disconnected
+      // viewer disconnect
       if (socket.role === "viewer") {
         delete viewers[socket.id];
 
