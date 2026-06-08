@@ -9,13 +9,11 @@ const cors = require("cors");
 const session = require("express-session");
 const { MongoStore } = require("connect-mongo"); // ✅ FIXED: Standard syntax adjustment for older destructured exports
 const http = require("http");
-const { WebSocketServer } = require("ws");
-
-// ✅ IMPORT SEPARATED WEBRTC ENGINE MODULE
-const { initWebRTCSignaling } = require("./socket/webrtcEngine");
 
 const app = express();
 const server = http.createServer(app);
+
+const { Server } = require("socket.io");
 
 // ======================================
 // DATABASE
@@ -26,10 +24,17 @@ connectDB();
 // WEBSOCKET SIGNALING SERVER (INTEGRATED)
 // ======================================
 // Shared native instance running directly on Express HTTP engine (Port 5000 / Proxy Target)
-const wss = new WebSocketServer({ server });
+const server = http.createServer(app);
 
-// Bind internal routing logic rules dynamically
-initWebRTCSignaling(wss);
+const io = new Server(server, {
+  cors: {
+    origin: "*",
+  },
+});
+
+const { initWebRTCSignaling } = require("./socket/webrtcEngine");
+
+initWebRTCSignaling(io);
 
 // ======================================
 // MIDDLEWARES
