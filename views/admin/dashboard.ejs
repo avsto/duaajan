@@ -220,7 +220,7 @@
       </div>
 
       <div class="col-lg-3 col-md-6 mb-4">
-
+        <a href="/admin/donations" class="text-decoration-none text-white">
         <div class="card-box">
 
           <div class="icon-box live">
@@ -228,15 +228,15 @@
           </div>
 
           <div class="stat-number">
-            {{ stats.liveUsers }}
+            {{ stats?.donateAmount ? "₹ " + stats.donateAmount.toLocaleString() : "₹ 0" }}
           </div>
 
           <div class="stat-title">
-            Live Users
+            Total Donations
           </div>
 
         </div>
-
+          </a>
       </div>
 
       <div class="col-lg-3 col-md-6 mb-4">
@@ -326,7 +326,7 @@ new Vue({
 
     stats:{
       users:<%= stats.users %>,
-      liveUsers:<%= stats.liveUsers %>,
+      donateAmount:<%= stats.donateAmount %>,
       masjids:<%= stats.masjids %>,
       ads:<%= stats.ads %>
     }

@@ -6,6 +6,7 @@ const Ad = require("../models/Ad");
 const axios = require("axios");
 const adminAuth = require("../middleware/adminAuth");
 const LiveReport = require("../models/LiveReport");
+const Donate = require("../models/Donate");
 // =========================
 // LOGIN PAGE
 // =========================
@@ -163,15 +164,26 @@ router.get("/dashboard", adminAuth, async (req, res) => {
   try {
     const admin = await User.findById(req.session.admin.id).lean();
 
-    const [users, liveUsers, masjids, ads] = await Promise.all([
+    const [users, donationData, masjids, ads] = await Promise.all([
       User.countDocuments({
         role: "user",
       }),
 
-      User.countDocuments({
-        role: "user",
-        isLive: true,
-      }),
+      Donate.aggregate([
+        {
+          $match: {
+            paymentStatus: "success",
+          },
+        },
+        {
+          $group: {
+            _id: null,
+            totalAmount: {
+              $sum: "$amount",
+            },
+          },
+        },
+      ]),
 
       User.countDocuments({
         role: "masjid",
@@ -180,9 +192,12 @@ router.get("/dashboard", adminAuth, async (req, res) => {
       Ad.countDocuments(),
     ]);
 
+    const donateAmount =
+      donationData.length > 0 ? donationData[0].totalAmount : 0;
+
     const stats = {
       users,
-      liveUsers,
+      donateAmount,
       masjids,
       ads,
     };
@@ -193,9 +208,56 @@ router.get("/dashboard", adminAuth, async (req, res) => {
     });
   } catch (error) {
     console.log(error);
-
     res.send("Server Error");
   }
+});
+
+router.get("/donations", adminAuth, async (req, res) => {
+  const page = parseInt(req.query.page) || 1;
+  const limit = 20;
+  const skip = (page - 1) * limit;
+  const search = req.query.search || "";
+
+  const query = {};
+
+  const [donations, totalDonations] = await Promise.all([
+    Donate.find(query)
+      .populate("userId", "name mobile")
+      .populate("masjidId", "name")
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean(),
+
+    Donate.countDocuments(query),
+  ]);
+
+  const successDonations = await Donate.countDocuments({
+    paymentStatus: "success",
+  });
+
+  // ✅ ADD THIS (important)
+  const totalAmountAgg = await Donate.aggregate([
+    { $match: { paymentStatus: "success" } },
+    {
+      $group: {
+        _id: null,
+        total: { $sum: "$amount" },
+      },
+    },
+  ]);
+
+  const totalAmount = totalAmountAgg.length > 0 ? totalAmountAgg[0].total : 0;
+
+  res.render("admin/donations", {
+    donations,
+    page,
+    search,
+    totalDonations,
+    successDonations,
+    totalAmount, // ✅ now defined
+    totalPages: Math.ceil(totalDonations / limit),
+  });
 });
 
 // =========================
