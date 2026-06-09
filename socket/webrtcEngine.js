@@ -43,9 +43,9 @@ const initWebRTCSignaling = (io) => {
       try {
         if (!roomId) return;
 
-        console.log("\n========== VIEWER JOIN ==========");
+        console.log("========== VIEWER JOIN ==========");
         console.log("Room:", roomId);
-        console.log("Viewer:", socket.id);
+        console.log("Viewer Socket:", socket.id);
 
         const broadcasterId = broadcasters[roomId];
 
