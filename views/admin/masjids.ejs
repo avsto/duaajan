@@ -260,6 +260,7 @@
                 {{ masjid.address }}
               </td>
               <td>
+               
                 {{ masjid.otp || 'N/A' }}
               </td>
 
@@ -432,7 +433,7 @@
       <h4>Masjid Documents</h4>
 
       <a
-        :href="masjidsDetails.document"
+        :href="'/uploads/'+masjidsDetails.document"
         target="_blank"
         class="btn btn-primary btn-sm"
       >
@@ -449,7 +450,7 @@
       </p>
 
       <a
-        :href="masjidsDetails.committeeMember1Document"
+        :href="'/uploads/'+masjidsDetails.committeeMember1Document"
         target="_blank"
         class="btn btn-info btn-sm"
       >
@@ -466,7 +467,7 @@
       </p>
 
       <a
-        :href="masjidsDetails.committeeMember2Document"
+        :href="'/uploads/'+masjidsDetails.committeeMember2Document"
         target="_blank"
         class="btn btn-info btn-sm"
       >
