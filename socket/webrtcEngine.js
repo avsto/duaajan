@@ -1,8 +1,5 @@
-global.broadcasters = global.broadcasters || {};
-global.viewers = global.viewers || {};
-console.log("PID =", process.pid);
-const broadcasters = global.broadcasters;
-const viewers = global.viewers;
+const broadcasters = {}; // roomId => broadcasterSocketId
+const viewers = {}; // viewerSocketId => { roomId, broadcasterId }
 
 const initWebRTCSignaling = (io) => {
   io.on("connection", (socket) => {
@@ -15,12 +12,11 @@ const initWebRTCSignaling = (io) => {
       try {
         if (!roomId) return;
 
-        roomId = String(roomId).trim();
-        console.log("BROADCAST PID =", process.pid);
         console.log("\n========== BROADCAST START ==========");
         console.log("Room:", roomId);
         console.log("Socket:", socket.id);
 
+        // old broadcaster replace
         broadcasters[roomId] = socket.id;
 
         socket.roomId = roomId;
@@ -28,12 +24,11 @@ const initWebRTCSignaling = (io) => {
 
         socket.join(roomId);
 
-        console.log(
-          "Current Broadcasters:",
-          JSON.stringify(broadcasters, null, 2),
-        );
+        console.log("Current Broadcasters:", broadcasters);
 
-        socket.emit("broadcast-ready", { roomId });
+        socket.emit("broadcast-ready", {
+          roomId,
+        });
 
         console.log("✅ Broadcast Registered");
       } catch (err) {
@@ -47,59 +42,35 @@ const initWebRTCSignaling = (io) => {
     socket.on("viewer", ({ roomId }) => {
       try {
         if (!roomId) return;
-        console.log("VIEWER PID =", process.pid);
-        roomId = String(roomId).trim();
 
-        console.log("\n========== VIEWER JOIN ==========");
+        console.log("========== VIEWER JOIN ==========");
         console.log("Room:", roomId);
         console.log("Viewer Socket:", socket.id);
 
-        const addViewer = (broadcasterId) => {
-          socket.roomId = roomId;
-          socket.role = "viewer";
-
-          viewers[socket.id] = {
-            roomId,
-            broadcasterId,
-          };
-
-          socket.join(roomId);
-
-          io.to(broadcasterId).emit("viewer", {
-            viewerId: socket.id,
-          });
-
-          console.log("✅ Viewer Added");
-        };
-
-        let broadcasterId = broadcasters[roomId];
+        const broadcasterId = broadcasters[roomId];
 
         console.log("Found Broadcaster:", broadcasterId);
 
-        // Retry once after 2 sec
         if (!broadcasterId) {
-          console.log("⚠️ Broadcaster not found. Retrying...");
-
-          setTimeout(() => {
-            const retryBroadcasterId = broadcasters[roomId];
-
-            console.log("Retry Broadcaster:", retryBroadcasterId);
-
-            if (!retryBroadcasterId) {
-              console.log("❌ Broadcast Not Found");
-
-              socket.emit("broadcast-not-found");
-
-              return;
-            }
-
-            addViewer(retryBroadcasterId);
-          }, 2000);
-
+          socket.emit("broadcast-not-found");
           return;
         }
 
-        addViewer(broadcasterId);
+        socket.roomId = roomId;
+        socket.role = "viewer";
+
+        viewers[socket.id] = {
+          roomId,
+          broadcasterId,
+        };
+
+        socket.join(roomId);
+
+        io.to(broadcasterId).emit("viewer", {
+          viewerId: socket.id,
+        });
+
+        console.log("✅ Viewer Added");
       } catch (err) {
         console.log("Viewer Join Error:", err);
       }
@@ -148,12 +119,10 @@ const initWebRTCSignaling = (io) => {
       try {
         if (!roomId) return;
 
-        roomId = String(roomId).trim();
-
         const broadcasterId = broadcasters[roomId];
 
         if (broadcasterId !== socket.id) {
-          console.log("❌ Unauthorized stop request");
+          console.log("❌ Unauthorized stop request:", socket.id);
           return;
         }
 
@@ -172,6 +141,7 @@ const initWebRTCSignaling = (io) => {
       try {
         console.log(`🔴 Disconnected: ${socket.id} | ${reason}`);
 
+        // check broadcaster
         let roomId = socket.roomId;
 
         if (!roomId) {
@@ -180,16 +150,14 @@ const initWebRTCSignaling = (io) => {
           );
         }
 
-        // broadcaster disconnected
         if (roomId && broadcasters[roomId] === socket.id) {
           console.log(`📴 Broadcaster Left Room: ${roomId}`);
 
           handleBroadcasterTeardown(io, roomId);
-
           return;
         }
 
-        // viewer disconnected
+        // check viewer
         if (viewers[socket.id]) {
           const { roomId, broadcasterId } = viewers[socket.id];
 
@@ -211,10 +179,8 @@ const initWebRTCSignaling = (io) => {
 // =====================================
 // ROOM CLEANUP
 // =====================================
-function handleBroadcasterTeardown(io, roomId) {
+const handleBroadcasterTeardown = (io, roomId) => {
   try {
-    roomId = String(roomId).trim();
-
     console.log(`🧹 Cleaning Room: ${roomId}`);
 
     io.to(roomId).emit("broadcast-stopped");
@@ -239,7 +205,7 @@ function handleBroadcasterTeardown(io, roomId) {
   } catch (err) {
     console.log("Cleanup Error:", err);
   }
-}
+};
 
 module.exports = {
   initWebRTCSignaling,
