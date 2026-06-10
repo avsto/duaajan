@@ -1,5 +1,8 @@
-const broadcasters = {}; // roomId => broadcasterSocketId
-const viewers = {}; // viewerSocketId => { roomId, broadcasterId }
+global.broadcasters = global.broadcasters || {};
+global.viewers = global.viewers || {};
+
+const broadcasters = global.broadcasters;
+const viewers = global.viewers;
 
 const initWebRTCSignaling = (io) => {
   io.on("connection", (socket) => {
