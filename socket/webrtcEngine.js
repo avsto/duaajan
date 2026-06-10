@@ -1,6 +1,6 @@
 global.broadcasters = global.broadcasters || {};
 global.viewers = global.viewers || {};
-
+console.log("PID =", process.pid);
 const broadcasters = global.broadcasters;
 const viewers = global.viewers;
 
@@ -16,7 +16,7 @@ const initWebRTCSignaling = (io) => {
         if (!roomId) return;
 
         roomId = String(roomId).trim();
-
+        console.log("BROADCAST PID =", process.pid);
         console.log("\n========== BROADCAST START ==========");
         console.log("Room:", roomId);
         console.log("Socket:", socket.id);
@@ -47,7 +47,7 @@ const initWebRTCSignaling = (io) => {
     socket.on("viewer", ({ roomId }) => {
       try {
         if (!roomId) return;
-
+        console.log("VIEWER PID =", process.pid);
         roomId = String(roomId).trim();
 
         console.log("\n========== VIEWER JOIN ==========");
