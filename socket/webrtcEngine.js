@@ -12,7 +12,10 @@ const initWebRTCSignaling = (io) => {
       try {
         if (!roomId) return;
         broadcasters[roomId] = socket.id;
-          console.log("start Broadcaster:", broadcasters);
+        console.log("🚀 Start Broadcaster");
+        console.log("Room:", roomId);
+        console.log("Socket:", socket.id);
+        console.log("Broadcasters:", broadcasters);
         socket.roomId = roomId;
         socket.role = "broadcaster";
         socket.join(roomId);
@@ -123,7 +126,10 @@ const initWebRTCSignaling = (io) => {
     // =====================================
     socket.on("disconnect", (reason) => {
       try {
-        console.log(`🔴 Disconnected: ${socket.id} | ${reason}`);
+        console.log("🔴 Disconnected:", socket.id);
+        console.log("Reason:", reason);
+        console.log("RoomId:", socket.roomId);
+        console.log("Broadcasters before check:", broadcasters);
 
         // check broadcaster
         let roomId = socket.roomId;
@@ -165,7 +171,12 @@ const initWebRTCSignaling = (io) => {
 // =====================================
 const handleBroadcasterTeardown = (io, roomId) => {
   try {
-    console.log(`🧹 Cleaning Room: ${roomId}`);
+    console.log("🧹 Cleaning:", roomId);
+    console.log("Before delete:", broadcasters);
+
+    delete broadcasters[roomId];
+
+    console.log("After delete:", broadcasters);
 
     io.to(roomId).emit("broadcast-stopped");
 
