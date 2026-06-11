@@ -148,9 +148,16 @@ const initWebRTCSignaling = (io) => {
 
         // broadcaster disconnected
         if (roomId && broadcasters.get(roomId) === socket.id) {
-          console.log(`📴 Broadcaster Left Room: ${roomId}`);
+          console.log(`📴 Broadcaster temporarily disconnected: ${roomId}`);
 
-          handleBroadcasterTeardown(io, roomId);
+          setTimeout(() => {
+            // agar reconnect nahi hua tab cleanup
+            if (broadcasters.get(roomId) === socket.id) {
+              console.log(`🗑 Removing broadcaster after timeout`);
+
+              handleBroadcasterTeardown(io, roomId);
+            }
+          }, 30000);
 
           return;
         }
