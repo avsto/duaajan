@@ -12,6 +12,7 @@ const initWebRTCSignaling = (io) => {
       try {
         if (!roomId) return;
         broadcasters[roomId] = socket.id;
+          console.log("start Broadcaster:", broadcasterId);
         socket.roomId = roomId;
         socket.role = "broadcaster";
         socket.join(roomId);
@@ -32,7 +33,7 @@ const initWebRTCSignaling = (io) => {
 
         const broadcasterId = broadcasters[roomId];
 
-        console.log("Found Broadcaster:", broadcasterId);
+        console.log("view Broadcaster:", broadcasterId);
 
         if (!broadcasterId) {
           socket.emit("broadcast-not-found");
