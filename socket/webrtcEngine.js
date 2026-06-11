@@ -1,68 +1,18 @@
-const broadcasters = new Map();
-const viewers = new Map();
+const broadcasters = new Map(); 
+// roomId -> { socketId, ready: true, ts }
 
-/**
- * SAFE broadcaster structure:
- * roomId => { socketId, ready, ts }
- */
-const setBroadcaster = (roomId, socketId) => {
-  broadcasters.set(roomId, {
-    socketId,
-    ready: true,
-    ts: Date.now(),
-  });
-};
+const viewers = new Map(); 
+// viewerSocketId -> { roomId, broadcasterId }
 
-const getBroadcaster = (roomId) => {
-  return broadcasters.get(roomId);
-};
-
-const waitForBroadcaster = (roomId, tries = 6) => {
-  return new Promise((resolve) => {
-    let count = 0;
-
-    const interval = setInterval(() => {
-      const b = getBroadcaster(roomId);
-
-      if (b?.socketId) {
-        clearInterval(interval);
-        return resolve(b.socketId);
-      }
-
-      count++;
-
-      if (count >= tries) {
-        clearInterval(interval);
-        resolve(null);
-      }
-    }, 500);
-  });
-};
-
-const attachViewer = (socket, roomId, broadcasterId, io) => {
-  socket.roomId = roomId;
-  socket.role = "viewer";
-
-  viewers.set(socket.id, {
-    roomId,
-    broadcasterId,
-  });
-
-  socket.join(roomId);
-
-  io.to(broadcasterId).emit("viewer", {
-    viewerId: socket.id,
-  });
-
-  console.log("✅ Viewer Added:", socket.id);
-};
+const pendingViewers = new Map();
+// roomId -> [viewerSocketId...]
 
 const initWebRTCSignaling = (io) => {
   io.on("connection", (socket) => {
     console.log("🟢 Connected:", socket.id);
 
     // =========================
-    // BROADCASTER START
+    // BROADCAST START
     // =========================
     socket.on("broadcaster", ({ roomId }) => {
       if (!roomId) return;
@@ -71,49 +21,73 @@ const initWebRTCSignaling = (io) => {
       console.log("Room:", roomId);
       console.log("Socket:", socket.id);
 
+      broadcasters.set(roomId, {
+        socketId: socket.id,
+        ready: true,
+        ts: Date.now(),
+      });
+
       socket.roomId = roomId;
       socket.role = "broadcaster";
-
       socket.join(roomId);
 
-      setBroadcaster(roomId, socket.id);
-
-      console.log("Broadcaster Set:", getBroadcaster(roomId));
+      console.log("Broadcaster Set:", broadcasters.get(roomId));
 
       socket.emit("broadcast-ready", { roomId });
+
+      // 🔥 process pending viewers
+      const queue = pendingViewers.get(roomId) || [];
+      queue.forEach((viewerId) => {
+        io.to(socket.id).emit("viewer", { viewerId });
+      });
+
+      pendingViewers.delete(roomId);
     });
 
     // =========================
-    // VIEWER JOIN (FIXED RACE CONDITION)
+    // VIEWER JOIN (FIXED)
     // =========================
-    socket.on("viewer", async ({ roomId }) => {
+    socket.on("viewer", ({ roomId }) => {
       if (!roomId) return;
 
       console.log("\n========== VIEWER JOIN ==========");
       console.log("Room:", roomId);
       console.log("Viewer:", socket.id);
 
-      let broadcaster = getBroadcaster(roomId);
+      const broadcaster = broadcasters.get(roomId);
 
-      if (!broadcaster?.socketId) {
-        console.log("⏳ Broadcaster not ready, waiting...");
+      // ❌ broadcaster not ready → queue it
+      if (!broadcaster || !broadcaster.ready) {
+        console.log("⏳ Broadcaster not ready, queueing...");
 
-        const resolved = await waitForBroadcaster(roomId);
-
-        if (!resolved) {
-          console.log("❌ No broadcaster found after retry");
-          socket.emit("broadcast-not-found");
-          return;
+        if (!pendingViewers.has(roomId)) {
+          pendingViewers.set(roomId, []);
         }
 
-        broadcaster = { socketId: resolved };
+        pendingViewers.get(roomId).push(socket.id);
+
+        return;
       }
 
-      attachViewer(socket, roomId, broadcaster.socketId, io);
+      console.log("✅ Viewer Added:", socket.id);
+
+      socket.roomId = roomId;
+      socket.role = "viewer";
+
+      viewers.set(socket.id, {
+        roomId,
+        broadcasterId: broadcaster.socketId,
+      });
+
+      socket.join(roomId);
+
+      io.to(broadcaster.socketId).emit("viewer", {
+        viewerId: socket.id,
+      });
     });
 
     // =========================
-    // SIGNALING
+    // OFFER
     // =========================
     socket.on("offer", ({ target, offer }) => {
       io.to(target).emit("offer", {
@@ -122,6 +96,9 @@ const initWebRTCSignaling = (io) => {
       });
     });
 
+    // =========================
+    // ANSWER
+    // =========================
     socket.on("answer", ({ target, answer }) => {
       io.to(target).emit("answer", {
         sender: socket.id,
@@ -129,6 +106,9 @@ const initWebRTCSignaling = (io) => {
       });
     });
 
+    // =========================
+    // CANDIDATE
+    // =========================
     socket.on("candidate", ({ target, candidate }) => {
       io.to(target).emit("candidate", {
         sender: socket.id,
@@ -140,7 +120,7 @@ const initWebRTCSignaling = (io) => {
     // STOP BROADCAST
     // =========================
     socket.on("stop-broadcast", ({ roomId }) => {
-      const broadcaster = getBroadcaster(roomId);
+      const broadcaster = broadcasters.get(roomId);
 
       if (!broadcaster || broadcaster.socketId !== socket.id) {
         console.log("❌ Unauthorized stop request");
@@ -149,62 +129,59 @@ const initWebRTCSignaling = (io) => {
 
       console.log("🛑 Broadcast Stopped:", roomId);
 
-      cleanupRoom(io, roomId);
+      handleCleanup(io, roomId);
     });
 
     // =========================
-    // DISCONNECT (SAFE)
+    // DISCONNECT
     // =========================
-    socket.on("disconnect", (reason) => {
-      console.log(`🔴 Disconnected: ${socket.id} | ${reason}`);
+    socket.on("disconnect", () => {
+      console.log("🔴 Disconnected:", socket.id);
 
-      // viewer cleanup
-      if (viewers.has(socket.id)) {
-        const { roomId, broadcasterId } = viewers.get(socket.id);
+      // broadcaster check
+      for (const [roomId, b] of broadcasters.entries()) {
+        if (b.socketId === socket.id) {
+          handleCleanup(io, roomId);
+          return;
+        }
+      }
 
-        io.to(broadcasterId).emit("viewer-disconnected", {
+      // viewer check
+      const viewer = viewers.get(socket.id);
+
+      if (viewer) {
+        io.to(viewer.broadcasterId).emit("viewer-disconnected", {
           viewerId: socket.id,
         });
 
         viewers.delete(socket.id);
-        return;
-      }
-
-      // broadcaster cleanup
-      for (const [roomId, b] of broadcasters.entries()) {
-        if (b.socketId === socket.id) {
-          console.log("📴 Broadcaster disconnected:", roomId);
-
-          setTimeout(() => {
-            const latest = getBroadcaster(roomId);
-
-            if (latest?.socketId === socket.id) {
-              cleanupRoom(io, roomId);
-            }
-          }, 5000);
-
-          break;
-        }
       }
     });
   });
 };
 
 // =========================
-// CLEANUP ROOM
+// CLEANUP FIXED
 // =========================
-const cleanupRoom = (io, roomId) => {
+const handleCleanup = (io, roomId) => {
   console.log("🧹 Cleaning Room:", roomId);
 
-  io.to(roomId).emit("broadcast-stopped");
+  const broadcaster = broadcasters.get(roomId);
+
+  if (broadcaster) {
+    io.to(broadcaster.socketId).emit("broadcast-stopped");
+  }
 
   broadcasters.delete(roomId);
 
-  for (const [viewerId, v] of viewers.entries()) {
-    if (v.roomId === roomId) {
+  // remove viewers
+  for (const [viewerId, viewer] of viewers.entries()) {
+    if (viewer.roomId === roomId) {
       viewers.delete(viewerId);
     }
   }
+
+  pendingViewers.delete(roomId);
 
   console.log("✅ Cleanup Done");
 };
