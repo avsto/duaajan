@@ -2,8 +2,43 @@ const broadcasters = new Map();
 const viewers = new Map();
 
 /**
- * attach viewer safely
+ * SAFE broadcaster structure:
+ * roomId => { socketId, ready, ts }
  */
+const setBroadcaster = (roomId, socketId) => {
+  broadcasters.set(roomId, {
+    socketId,
+    ready: true,
+    ts: Date.now(),
+  });
+};
+
+const getBroadcaster = (roomId) => {
+  return broadcasters.get(roomId);
+};
+
+const waitForBroadcaster = (roomId, tries = 6) => {
+  return new Promise((resolve) => {
+    let count = 0;
+
+    const interval = setInterval(() => {
+      const b = getBroadcaster(roomId);
+
+      if (b?.socketId) {
+        clearInterval(interval);
+        return resolve(b.socketId);
+      }
+
+      count++;
+
+      if (count >= tries) {
+        clearInterval(interval);
+        resolve(null);
+      }
+    }, 500);
+  });
+};
+
 const attachViewer = (socket, roomId, broadcasterId, io) => {
   socket.roomId = roomId;
   socket.role = "viewer";
@@ -27,7 +62,7 @@ const initWebRTCSignaling = (io) => {
     console.log("🟢 Connected:", socket.id);
 
     // =========================
-    // BROADCASTER
+    // BROADCASTER START
     // =========================
     socket.on("broadcaster", ({ roomId }) => {
       if (!roomId) return;
@@ -36,88 +71,65 @@ const initWebRTCSignaling = (io) => {
       console.log("Room:", roomId);
       console.log("Socket:", socket.id);
 
-      const existing = broadcasters.get(roomId);
-
-      // SAFE overwrite logic
-      if (!existing || existing !== socket.id) {
-        broadcasters.set(roomId, socket.id);
-      }
-
       socket.roomId = roomId;
       socket.role = "broadcaster";
 
       socket.join(roomId);
 
-      console.log("Current Broadcaster:", broadcasters.get(roomId));
+      setBroadcaster(roomId, socket.id);
+
+      console.log("Broadcaster Set:", getBroadcaster(roomId));
 
       socket.emit("broadcast-ready", { roomId });
     });
 
     // =========================
-    // VIEWER (FIXED RACE CONDITION)
+    // VIEWER JOIN (FIXED RACE CONDITION)
     // =========================
-    socket.on("viewer", ({ roomId }) => {
+    socket.on("viewer", async ({ roomId }) => {
       if (!roomId) return;
 
       console.log("\n========== VIEWER JOIN ==========");
       console.log("Room:", roomId);
       console.log("Viewer:", socket.id);
 
-      const broadcasterId = broadcasters.get(roomId);
+      let broadcaster = getBroadcaster(roomId);
 
-      console.log("Found Broadcaster:", broadcasterId);
+      if (!broadcaster?.socketId) {
+        console.log("⏳ Broadcaster not ready, waiting...");
 
-      // 🔥 FIX: retry if undefined
-      if (!broadcasterId) {
-        console.log("❌ Broadcaster not ready, retrying...");
+        const resolved = await waitForBroadcaster(roomId);
 
-        setTimeout(() => {
-          const retry = broadcasters.get(roomId);
+        if (!resolved) {
+          console.log("❌ No broadcaster found after retry");
+          socket.emit("broadcast-not-found");
+          return;
+        }
 
-          if (!retry) {
-            socket.emit("broadcast-not-found");
-            return;
-          }
-
-          attachViewer(socket, roomId, retry, io);
-        }, 500);
-
-        return;
+        broadcaster = { socketId: resolved };
       }
 
-      attachViewer(socket, roomId, broadcasterId, io);
+      attachViewer(socket, roomId, broadcaster.socketId, io);
     });
 
     // =========================
-    // OFFER
+    // SIGNALING
     // =========================
     socket.on("offer", ({ target, offer }) => {
-      if (!target) return;
-
       io.to(target).emit("offer", {
         sender: socket.id,
         offer,
       });
     });
 
-    // =========================
-    // ANSWER
-    // =========================
     socket.on("answer", ({ target, answer }) => {
-      if (!target) return;
-
       io.to(target).emit("answer", {
         sender: socket.id,
         answer,
       });
     });
 
-    // =========================
-    // CANDIDATE
-    // =========================
     socket.on("candidate", ({ target, candidate }) => {
-      if (!target) return;
-
       io.to(target).emit("candidate", {
         sender: socket.id,
         candidate,
@@ -128,25 +140,25 @@ const initWebRTCSignaling = (io) => {
     // STOP BROADCAST
     // =========================
     socket.on("stop-broadcast", ({ roomId }) => {
-      const broadcasterId = broadcasters.get(roomId);
+      const broadcaster = getBroadcaster(roomId);
 
-      if (broadcasterId !== socket.id) {
+      if (!broadcaster || broadcaster.socketId !== socket.id) {
         console.log("❌ Unauthorized stop request");
         return;
       }
 
       console.log("🛑 Broadcast Stopped:", roomId);
 
-      handleCleanup(io, roomId);
+      cleanupRoom(io, roomId);
     });
 
     // =========================
-    // DISCONNECT (FIXED)
+    // DISCONNECT (SAFE)
     // =========================
     socket.on("disconnect", (reason) => {
       console.log(`🔴 Disconnected: ${socket.id} | ${reason}`);
 
-      // VIEWER CHECK
+      // viewer cleanup
       if (viewers.has(socket.id)) {
         const { roomId, broadcasterId } = viewers.get(socket.id);
 
@@ -158,15 +170,16 @@ const initWebRTCSignaling = (io) => {
         return;
       }
 
-      // BROADCASTER CHECK
-      for (const [roomId, id] of broadcasters.entries()) {
-        if (id === socket.id) {
+      // broadcaster cleanup
+      for (const [roomId, b] of broadcasters.entries()) {
+        if (b.socketId === socket.id) {
           console.log("📴 Broadcaster disconnected:", roomId);
 
-          // 🔥 delay cleanup (important fix)
           setTimeout(() => {
-            if (broadcasters.get(roomId) === socket.id) {
-              handleCleanup(io, roomId);
+            const latest = getBroadcaster(roomId);
+
+            if (latest?.socketId === socket.id) {
+              cleanupRoom(io, roomId);
             }
           }, 5000);
 
@@ -178,9 +191,9 @@ const initWebRTCSignaling = (io) => {
 };
 
 // =========================
-// CLEANUP FUNCTION
+// CLEANUP ROOM
 // =========================
-const handleCleanup = (io, roomId) => {
+const cleanupRoom = (io, roomId) => {
   console.log("🧹 Cleaning Room:", roomId);
 
   io.to(roomId).emit("broadcast-stopped");
