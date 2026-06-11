@@ -1,4 +1,4 @@
-const broadcasters = {}; // roomId => broadcasterSocketId
+const broadcasters = new Map();
 const viewers = {}; // viewerSocketId => { roomId, broadcasterId }
 
 const initWebRTCSignaling = (io) => {
@@ -11,14 +11,19 @@ const initWebRTCSignaling = (io) => {
     socket.on("broadcaster", ({ roomId }) => {
       try {
         if (!roomId) return;
-        broadcasters[roomId] = socket.id;
+
+        broadcasters.set(roomId, socket.id);
+
         console.log("🚀 Start Broadcaster");
         console.log("Room:", roomId);
         console.log("Socket:", socket.id);
-        console.log("Broadcasters:", broadcasters);
+        console.log("Broadcasters:", Array.from(broadcasters.entries()));
+
         socket.roomId = roomId;
         socket.role = "broadcaster";
+
         socket.join(roomId);
+
         socket.emit("broadcast-ready", {
           roomId,
         });
@@ -34,9 +39,9 @@ const initWebRTCSignaling = (io) => {
       try {
         if (!roomId) return;
 
-        const broadcasterId = broadcasters[roomId];
+        const broadcasterId = broadcasters.get(roomId);
 
-        console.log("view Broadcaster:", broadcasterId);
+        console.log("View Broadcaster:", broadcasterId);
 
         if (!broadcasterId) {
           socket.emit("broadcast-not-found");
@@ -106,7 +111,7 @@ const initWebRTCSignaling = (io) => {
       try {
         if (!roomId) return;
 
-        const broadcasterId = broadcasters[roomId];
+        const broadcasterId = broadcasters.get(roomId);
 
         if (broadcasterId !== socket.id) {
           console.log("❌ Unauthorized stop request:", socket.id);
@@ -128,26 +133,29 @@ const initWebRTCSignaling = (io) => {
       try {
         console.log("🔴 Disconnected:", socket.id);
         console.log("Reason:", reason);
-        console.log("RoomId:", socket.roomId);
-        console.log("Broadcasters before check:", broadcasters);
 
-        // check broadcaster
         let roomId = socket.roomId;
 
+        // find broadcaster room
         if (!roomId) {
-          roomId = Object.keys(broadcasters).find(
-            (room) => broadcasters[room] === socket.id,
-          );
+          for (const [room, broadcasterId] of broadcasters.entries()) {
+            if (broadcasterId === socket.id) {
+              roomId = room;
+              break;
+            }
+          }
         }
 
-        if (roomId && broadcasters[roomId] === socket.id) {
+        // broadcaster disconnected
+        if (roomId && broadcasters.get(roomId) === socket.id) {
           console.log(`📴 Broadcaster Left Room: ${roomId}`);
 
           handleBroadcasterTeardown(io, roomId);
+
           return;
         }
 
-        // check viewer
+        // viewer disconnected
         if (viewers[socket.id]) {
           const { roomId, broadcasterId } = viewers[socket.id];
 
@@ -172,24 +180,22 @@ const initWebRTCSignaling = (io) => {
 const handleBroadcasterTeardown = (io, roomId) => {
   try {
     console.log("🧹 Cleaning:", roomId);
-    console.log("Before delete:", broadcasters);
-
-    delete broadcasters[roomId];
-
-    console.log("After delete:", broadcasters);
+    console.log("Before delete:", Array.from(broadcasters.entries()));
 
     io.to(roomId).emit("broadcast-stopped");
 
-    delete broadcasters[roomId];
+    broadcasters.delete(roomId);
+
+    console.log("After delete:", Array.from(broadcasters.entries()));
 
     Object.keys(viewers).forEach((viewerId) => {
       const viewer = viewers[viewerId];
 
       if (viewer?.roomId === roomId) {
-        const socket = io.sockets.sockets.get(viewerId);
+        const viewerSocket = io.sockets.sockets.get(viewerId);
 
-        if (socket) {
-          socket.leave(roomId);
+        if (viewerSocket) {
+          viewerSocket.leave(roomId);
         }
 
         delete viewers[viewerId];
