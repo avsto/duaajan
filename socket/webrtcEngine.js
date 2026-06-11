@@ -12,7 +12,7 @@ const initWebRTCSignaling = (io) => {
       try {
         if (!roomId) return;
         broadcasters[roomId] = socket.id;
-          console.log("start Broadcaster:", broadcasterId);
+          console.log("start Broadcaster:", broadcasters);
         socket.roomId = roomId;
         socket.role = "broadcaster";
         socket.join(roomId);
