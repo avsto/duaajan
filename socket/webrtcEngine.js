@@ -1,18 +1,18 @@
-const broadcasters = new Map(); 
+const broadcasters = new Map();
 // roomId -> { socketId, ready: true, ts }
 
-const viewers = new Map(); 
+const viewers = new Map();
 // viewerSocketId -> { roomId, broadcasterId }
 
 const pendingViewers = new Map();
-// roomId -> [viewerSocketId...]
+// roomId -> [viewerSocketId]
 
 const initWebRTCSignaling = (io) => {
   io.on("connection", (socket) => {
     console.log("🟢 Connected:", socket.id);
 
     // =========================
-    // BROADCAST START
+    // BROADCASTER
     // =========================
     socket.on("broadcaster", ({ roomId }) => {
       if (!roomId) return;
@@ -21,31 +21,38 @@ const initWebRTCSignaling = (io) => {
       console.log("Room:", roomId);
       console.log("Socket:", socket.id);
 
-      broadcasters.set(roomId, {
+      const broadcasterData = {
         socketId: socket.id,
         ready: true,
         ts: Date.now(),
-      });
+      };
+
+      broadcasters.set(roomId, broadcasterData);
 
       socket.roomId = roomId;
       socket.role = "broadcaster";
       socket.join(roomId);
 
-      console.log("Broadcaster Set:", broadcasters.get(roomId));
+      console.log("Broadcaster Set:", broadcasterData);
 
       socket.emit("broadcast-ready", { roomId });
 
-      // 🔥 process pending viewers
+      // 🔥 flush queued viewers
       const queue = pendingViewers.get(roomId) || [];
-      queue.forEach((viewerId) => {
-        io.to(socket.id).emit("viewer", { viewerId });
-      });
 
-      pendingViewers.delete(roomId);
+      if (queue.length > 0) {
+        console.log("🔄 Flushing queued viewers:", queue.length);
+
+        queue.forEach((viewerId) => {
+          io.to(socket.id).emit("viewer", { viewerId });
+        });
+
+        pendingViewers.delete(roomId);
+      }
     });
 
     // =========================
-    // VIEWER JOIN (FIXED)
+    // VIEWER
     // =========================
     socket.on("viewer", ({ roomId }) => {
       if (!roomId) return;
@@ -56,7 +63,6 @@ const initWebRTCSignaling = (io) => {
 
       const broadcaster = broadcasters.get(roomId);
 
-      // ❌ broadcaster not ready → queue it
       if (!broadcaster || !broadcaster.ready) {
         console.log("⏳ Broadcaster not ready, queueing...");
 
@@ -64,12 +70,14 @@ const initWebRTCSignaling = (io) => {
           pendingViewers.set(roomId, []);
         }
 
-        pendingViewers.get(roomId).push(socket.id);
+        const q = pendingViewers.get(roomId);
+
+        if (!q.includes(socket.id)) {
+          q.push(socket.id);
+        }
 
         return;
       }
-
-      console.log("✅ Viewer Added:", socket.id);
 
       socket.roomId = roomId;
       socket.role = "viewer";
@@ -84,6 +92,8 @@ const initWebRTCSignaling = (io) => {
       io.to(broadcaster.socketId).emit("viewer", {
         viewerId: socket.id,
       });
+
+      console.log("✅ Viewer Added:", socket.id);
     });
 
     // =========================
@@ -120,16 +130,16 @@ const initWebRTCSignaling = (io) => {
     // STOP BROADCAST
     // =========================
     socket.on("stop-broadcast", ({ roomId }) => {
-      const broadcaster = broadcasters.get(roomId);
+      const b = broadcasters.get(roomId);
 
-      if (!broadcaster || broadcaster.socketId !== socket.id) {
+      if (!b || b.socketId !== socket.id) {
         console.log("❌ Unauthorized stop request");
         return;
       }
 
       console.log("🛑 Broadcast Stopped:", roomId);
 
-      handleCleanup(io, roomId);
+      cleanup(io, roomId);
     });
 
     // =========================
@@ -141,7 +151,7 @@ const initWebRTCSignaling = (io) => {
       // broadcaster check
       for (const [roomId, b] of broadcasters.entries()) {
         if (b.socketId === socket.id) {
-          handleCleanup(io, roomId);
+          cleanup(io, roomId);
           return;
         }
       }
@@ -161,9 +171,9 @@ const initWebRTCSignaling = (io) => {
 };
 
 // =========================
-// CLEANUP FIXED
+// CLEANUP
 // =========================
-const handleCleanup = (io, roomId) => {
+const cleanup = (io, roomId) => {
   console.log("🧹 Cleaning Room:", roomId);
 
   const broadcaster = broadcasters.get(roomId);
@@ -173,15 +183,13 @@ const handleCleanup = (io, roomId) => {
   }
 
   broadcasters.delete(roomId);
+  pendingViewers.delete(roomId);
 
-  // remove viewers
-  for (const [viewerId, viewer] of viewers.entries()) {
-    if (viewer.roomId === roomId) {
+  for (const [viewerId, v] of viewers.entries()) {
+    if (v.roomId === roomId) {
       viewers.delete(viewerId);
     }
   }
-
-  pendingViewers.delete(roomId);
 
   console.log("✅ Cleanup Done");
 };
