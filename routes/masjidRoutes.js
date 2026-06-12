@@ -96,6 +96,12 @@ router.post("/live-start", auth, async (req, res) => {
             roomId: String(masjidId),
             reportId: String(report._id),
           },
+          android: {
+            priority: "high",
+            notification: {
+              channelId: "live-azaan",
+            },
+          },
         });
 
         successCount++;
