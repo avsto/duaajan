@@ -86,21 +86,17 @@ router.post("/live-start", auth, async (req, res) => {
       try {
         await admin.messaging().send({
           token: user.fcmToken,
-          notification: {
-            title: `${prayerType.toUpperCase()} Live Started`,
-            body: "Tap to join live Azaan",
-          },
+
           data: {
             type: "LIVE_START",
             masjidId: String(masjidId),
             roomId: String(masjidId),
             reportId: String(report._id),
           },
+
           android: {
             priority: "high",
-            notification: {
-              channelId: "live-azaan",
-            },
+            ttl: 3600 * 1000, // 1 hour
           },
         });
 
