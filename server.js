@@ -64,7 +64,8 @@ async function start() {
     const pubClient = createClient({
       url: process.env.REDIS_URL,
     });
-
+    
+    // 
     const subClient = pubClient.duplicate();
 
     await pubClient.connect();
