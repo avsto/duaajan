@@ -1,14 +1,19 @@
+// webrtcSignaling.js
+
 module.exports.initWebRTCSignaling = (io, redis) => {
   io.on("connection", (socket) => {
     console.log("🟢 Connected:", socket.id);
 
-    // =================================
+    // =========================
     // BROADCASTER
-    // =================================
+    // =========================
     socket.on("broadcaster", async ({ roomId }) => {
+      if (!roomId) return;
+
       await redis.hSet(`broadcast:${roomId}`, {
         socketId: socket.id,
         ready: "1",
+        ts: Date.now(),
       });
 
       socket.roomId = roomId;
@@ -16,20 +21,26 @@ module.exports.initWebRTCSignaling = (io, redis) => {
 
       socket.join(roomId);
 
-      socket.emit("broadcast-ready");
+      socket.emit("broadcast-ready", { roomId });
 
-      console.log("🎙 Broadcaster:", roomId);
+      console.log("🎙 Broadcaster Ready:", roomId);
     });
 
-    // =================================
-    // VIEWER
-    // =================================
+    // =========================
+    // VIEWER (MULTIPLE SUPPORT)
+    // =========================
     socket.on("viewer", async ({ roomId }) => {
+      if (!roomId) return;
+
+      console.log("\n========== VIEWER JOIN ==========");
+      console.log("Room:", roomId);
+      console.log("Viewer:", socket.id);
+
       const broadcaster = await redis.hGetAll(`broadcast:${roomId}`);
 
       if (!broadcaster || !broadcaster.socketId) {
         socket.emit("broadcast-not-found");
-
+        console.log("⏳ No broadcaster");
         return;
       }
 
@@ -42,12 +53,12 @@ module.exports.initWebRTCSignaling = (io, redis) => {
         viewerId: socket.id,
       });
 
-      console.log("👤 Viewer:", socket.id);
+      console.log("👤 Viewer Added:", socket.id);
     });
 
-    // =================================
+    // =========================
     // OFFER
-    // =================================
+    // =========================
     socket.on("offer", ({ target, offer }) => {
       io.to(target).emit("offer", {
         sender: socket.id,
@@ -55,9 +66,9 @@ module.exports.initWebRTCSignaling = (io, redis) => {
       });
     });
 
-    // =================================
+    // =========================
     // ANSWER
-    // =================================
+    // =========================
     socket.on("answer", ({ target, answer }) => {
       io.to(target).emit("answer", {
         sender: socket.id,
@@ -65,9 +76,9 @@ module.exports.initWebRTCSignaling = (io, redis) => {
       });
     });
 
-    // =================================
-    // ICE
-    // =================================
+    // =========================
+    // ICE CANDIDATE
+    // =========================
     socket.on("candidate", ({ target, candidate }) => {
       io.to(target).emit("candidate", {
         sender: socket.id,
@@ -75,31 +86,30 @@ module.exports.initWebRTCSignaling = (io, redis) => {
       });
     });
 
-    // =================================
-    // STOP
-    // =================================
+    // =========================
+    // STOP BROADCAST
+    // =========================
     socket.on("stop-broadcast", async ({ roomId }) => {
       io.to(roomId).emit("broadcast-stopped");
-
       await redis.del(`broadcast:${roomId}`);
     });
 
-    // =================================
-    // DISCONNECT
-    // =================================
+    // =========================
+    // DISCONNECT FIXED
+    // =========================
     socket.on("disconnect", async () => {
-      console.log("🔴 Disconnect:", socket.id);
+      console.log("🔴 Disconnected:", socket.id);
 
       if (socket.role === "broadcaster") {
         setTimeout(async () => {
           const data = await redis.hGetAll(`broadcast:${socket.roomId}`);
 
-          if (data && data.socketId === socket.id) {
+          if (data?.socketId === socket.id) {
             io.to(socket.roomId).emit("broadcast-stopped");
 
             await redis.del(`broadcast:${socket.roomId}`);
 
-            console.log("🛑 Broadcast Ended");
+            console.log("🛑 Broadcast ended");
           }
         }, 30000);
       }
