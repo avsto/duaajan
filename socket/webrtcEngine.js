@@ -7,7 +7,7 @@ const viewers = new Map();
 // viewerSocketId -> { roomId, broadcasterId }
 
 const pendingViewers = new Map();
-// roomId -> [viewerSocketId]
+// roomId -> Set(viewerSocketId)
 
 const initWebRTCSignaling = (io) => {
   io.on("connection", (socket) => {
@@ -39,11 +39,15 @@ const initWebRTCSignaling = (io) => {
           roomId,
         });
 
-        // Flush pending viewers
-        const queue = pendingViewers.get(roomId) || [];
+        console.log("ALL BROADCASTERS:", [...broadcasters.entries()]);
 
-        if (queue.length > 0) {
-          console.log("🔄 Flushing queued viewers:", queue.length);
+        // ==========================================
+        // FLUSH PENDING VIEWERS
+        // ==========================================
+        const queue = pendingViewers.get(roomId);
+
+        if (queue && queue.size > 0) {
+          console.log("🔄 Flushing queued viewers:", queue.size);
 
           queue.forEach((viewerId) => {
             const viewerSocket = io.sockets.sockets.get(viewerId);
@@ -87,23 +91,21 @@ const initWebRTCSignaling = (io) => {
         console.log("Room:", roomId);
         console.log("Viewer:", socket.id);
 
+        console.log("CURRENT BROADCASTERS:", [...broadcasters.entries()]);
+
         const broadcaster = broadcasters.get(roomId);
 
-        // broadcaster not available
-        if (!broadcaster) {
+        console.log("FOUND BROADCASTER:", broadcaster);
+
+        // broadcaster unavailable
+        if (!broadcaster || !broadcaster.ready) {
           console.log("⏳ Broadcaster not ready, queueing...");
 
           if (!pendingViewers.has(roomId)) {
-            pendingViewers.set(roomId, []);
+            pendingViewers.set(roomId, new Set());
           }
 
-          const queue = pendingViewers.get(roomId);
-
-          if (!queue.includes(socket.id)) {
-            queue.push(socket.id);
-          }
-
-          socket.emit("broadcast-not-found");
+          pendingViewers.get(roomId).add(socket.id);
 
           return;
         }
@@ -153,7 +155,7 @@ const initWebRTCSignaling = (io) => {
     });
 
     // ==================================================
-    // ICE CANDIDATE
+    // CANDIDATE
     // ==================================================
     socket.on("candidate", ({ target, candidate }) => {
       if (!target) return;
@@ -174,7 +176,6 @@ const initWebRTCSignaling = (io) => {
         if (!broadcaster) return;
 
         if (broadcaster.socketId !== socket.id) {
-          console.log("❌ Unauthorized stop request");
           return;
         }
 
@@ -182,7 +183,7 @@ const initWebRTCSignaling = (io) => {
 
         cleanup(io, roomId);
       } catch (err) {
-        console.log("Stop Broadcast Error:", err);
+        console.log("Stop Error:", err);
       }
     });
 
@@ -215,17 +216,18 @@ const initWebRTCSignaling = (io) => {
           setTimeout(() => {
             const current = broadcasters.get(roomId);
 
-            if (!current) return;
-
-            // broadcaster reconnected
-            if (current.socketId !== socket.id) {
+            // reconnected
+            if (current && current.socketId !== socket.id) {
               console.log("♻️ Broadcaster reconnected");
               return;
             }
 
-            console.log("🛑 Broadcaster really disconnected");
+            // still disconnected
+            if (current && current.socketId === socket.id) {
+              console.log("🛑 Broadcaster really disconnected");
 
-            cleanup(io, roomId);
+              cleanup(io, roomId);
+            }
           }, 30000);
 
           break;
@@ -239,25 +241,20 @@ const initWebRTCSignaling = (io) => {
 // CLEANUP
 // ==================================================
 const cleanup = (io, roomId) => {
-  try {
-    console.log("🧹 Cleaning Room:", roomId);
+  console.log("🧹 Cleaning Room:", roomId);
 
-    io.to(roomId).emit("broadcast-stopped");
+  io.to(roomId).emit("broadcast-stopped");
 
-    broadcasters.delete(roomId);
+  broadcasters.delete(roomId);
+  pendingViewers.delete(roomId);
 
-    pendingViewers.delete(roomId);
-
-    for (const [viewerId, viewer] of viewers.entries()) {
-      if (viewer.roomId === roomId) {
-        viewers.delete(viewerId);
-      }
+  for (const [viewerId, viewer] of viewers.entries()) {
+    if (viewer.roomId === roomId) {
+      viewers.delete(viewerId);
     }
-
-    console.log("✅ Cleanup Done");
-  } catch (err) {
-    console.log("Cleanup Error:", err);
   }
+
+  console.log("✅ Cleanup Done");
 };
 
 module.exports = {
