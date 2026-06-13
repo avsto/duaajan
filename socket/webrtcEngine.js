@@ -1,5 +1,8 @@
 // webrtcSignaling.js
-
+console.log(
+  "SERVER PID:",
+  process.pid
+);
 const broadcasters = new Map();
 // roomId -> { socketId, ready, ts }
 
@@ -12,6 +15,12 @@ const pendingViewers = new Map();
 const initWebRTCSignaling = (io) => {
   io.on("connection", (socket) => {
     console.log("🟢 Connected:", socket.id);
+ console.log(
+    "PID:",
+    process.pid,
+    "Socket:",
+    socket.id
+  );
 
     // ==================================================
     // BROADCASTER
