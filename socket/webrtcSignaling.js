@@ -3,7 +3,6 @@
 module.exports.initWebRTCSignaling = (io, redis) => {
   io.on("connection", (socket) => {
     console.log("🟢 Connected:", socket.id);
-
     // =========================
     // BROADCASTER
     // =========================
