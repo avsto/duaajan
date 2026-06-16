@@ -87,16 +87,37 @@ router.post("/live-start", auth, async (req, res) => {
         await admin.messaging().send({
           token: user.fcmToken,
 
+          notification: {
+            title: "🔴 Live Audio Started",
+            body: "Masjid live broadcast is now active",
+            image: "https://duaajan.com/uploads/notification.png",
+          },
+
           data: {
             type: "LIVE_START",
             masjidId: String(masjidId),
             roomId: String(masjidId),
             reportId: String(report._id),
+            image: "https://duaajan.com/uploads/notification.png",
           },
 
           android: {
             priority: "high",
-            ttl: 3600 * 1000, // 1 hour
+            ttl: 3600 * 1000,
+            notification: {
+              imageUrl: "https://duaajan.com/uploads/notification.png",
+            },
+          },
+
+          apns: {
+            payload: {
+              aps: {
+                mutableContent: 1,
+              },
+            },
+            fcmOptions: {
+              imageUrl: "https://duaajan.com/uploads/notification.png",
+            },
           },
         });
 
