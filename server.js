@@ -41,6 +41,15 @@ app.use(
   }),
 );
 
+// ======================================
+// VIEW ENGINE CONFIGURATION
+// ======================================
+
+app.set("view engine", "ejs");
+app.set("views", path.join(__dirname, "views"));
+app.use(express.static(path.join(__dirname, "public")));
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+
 // ==========================
 // ROUTES
 // ==========================
@@ -49,6 +58,12 @@ app.use("/api/user", require("./routes/userRoutes"));
 app.use("/api/masjid", require("./routes/masjidRoutes"));
 app.use("/api/donate", require("./routes/donateRoutes"));
 app.use("/api/ads", require("./routes/adRoutes"));
+
+// ======================================
+// ADMIN & WEB FRAMEWORK ROUTES
+// ======================================
+app.use("/admin", require("./routes/adminRoutes"));
+app.use("/", require("./routes/frontedRoutes"));
 
 // ==========================
 // SOCKET + REDIS
