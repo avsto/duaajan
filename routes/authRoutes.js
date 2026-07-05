@@ -5,6 +5,10 @@ const upload = require("../middleware/upload");
 const User = require("../models/User");
 const auth = require("../middleware/auth");
 const axios = require("axios");
+
+const Donate = require("../models/Donate");
+const AppSetting = require("../models/AppSetting");
+
 router.post(
   "/register",
   upload.fields([
@@ -156,21 +160,21 @@ router.post("/send-otp", async (req, res) => {
 
     await user.save();
 
-     const smsResponse = await axios.get(
-          "https://bhashsms.com/api/sendmsgutil.php",
-          {
-            params: {
-              user: "Dua_2",
-              pass: "123456", // actual password
-              sender: "BUZWAP",
-              phone: mobile,
-              text: "auth_01",
-              priority: "wa",
-              stype: "auth",
-              Params: otp,
-            },
-          },
-        );
+    const smsResponse = await axios.get(
+      "https://bhashsms.com/api/sendmsgutil.php",
+      {
+        params: {
+          user: "Dua_2",
+          pass: "123456", // actual password
+          sender: "BUZWAP",
+          phone: mobile,
+          text: "auth_01",
+          priority: "wa",
+          stype: "auth",
+          Params: otp,
+        },
+      },
+    );
 
     // ======================================
     // SMS SEND HERE
@@ -292,41 +296,63 @@ router.post("/verify-otp", async (req, res) => {
   }
 });
 
-router.get(
-  "/me",
+router.get("/me", auth, async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id).populate({
+      path: "selectedMasjid",
+      select: `
+        masjidName
+        imamName
+        photo
+        address
+        isLive
+      `,
+    });
 
-  auth,
-
-  async (req, res) => {
-    try {
-      const user = await User.findById(req.user._id)
-
-        .populate({
-          path: "selectedMasjid",
-
-          select: `
-            masjidName
-            imamName
-            photo
-            address
-            isLive
-          `,
-        });
-
-      res.json({
-        success: true,
-
-        user,
-      });
-    } catch (error) {
-      res.status(500).json({
+    if (!user) {
+      return res.status(404).json({
         success: false,
-
-        message: error.message,
+        message: "User not found",
       });
     }
-  },
-);
+
+    // App Settings
+    let settings = await AppSetting.findOne();
+
+    if (!settings) {
+      settings = await AppSetting.create({});
+    }
+
+    // Registration days
+    const days = Math.floor(
+      (Date.now() - new Date(user.createdAt)) / (1000 * 60 * 60 * 24),
+    );
+
+    // Successful donation
+    const donation = await Donate.findOne({
+      userId: user._id,
+      paymentStatus: "success",
+    });
+
+    const canReceiveNotification =
+      !!donation || days <= settings.freeNotificationDays;
+
+    // Convert document to object
+    const userData = user.toObject();
+
+    userData.canReceiveNotification = canReceiveNotification;
+
+    res.json({
+      success: true,
+      user: userData,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+});
 
 router.post("/save-fcm", auth, async (req, res) => {
   try {

@@ -7,6 +7,7 @@ const axios = require("axios");
 const adminAuth = require("../middleware/adminAuth");
 const LiveReport = require("../models/LiveReport");
 const Donate = require("../models/Donate");
+const AppSetting = require("../models/AppSetting");
 // =========================
 // LOGIN PAGE
 // =========================
@@ -194,12 +195,17 @@ router.get("/dashboard", adminAuth, async (req, res) => {
 
     const donateAmount =
       donationData.length > 0 ? donationData[0].totalAmount : 0;
+    let settings = await AppSetting.findOne();
+    if (!settings) {
+      settings = await AppSetting.create({});
+    }
 
     const stats = {
       users,
       donateAmount,
       masjids,
       ads,
+      settings,
     };
 
     res.render("admin/dashboard", {
@@ -645,6 +651,28 @@ router.get("/logout", adminAuth, (req, res) => {
   req.session.destroy(() => {
     res.redirect("/admin");
   });
+});
+
+router.post("/settings", adminAuth, async (req, res) => {
+  try {
+    const { notificationEnabled, freeNotificationDays } = req.body;
+
+    let settings = await AppSetting.findOne();
+
+    if (!settings) {
+      settings = new AppSetting();
+    }
+
+    settings.notificationEnabled = notificationEnabled === "true";
+    settings.freeNotificationDays = parseInt(freeNotificationDays) || 7;
+
+    await settings.save();
+
+    res.redirect("/admin/dashboard");
+  } catch (error) {
+    console.error(error);
+    res.status(500).send("Something went wrong");
+  }
 });
 
 module.exports = router;

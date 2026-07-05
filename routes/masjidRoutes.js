@@ -11,6 +11,8 @@ const admin = require("firebase-admin");
 const upload = require("../middleware/upload");
 
 const LiveReport = require("../models/LiveReport");
+const Donate = require("../models/Donate");
+const AppSetting = require("../models/AppSetting");
 // ======================================
 // GET MASJID LIST
 // ======================================
@@ -79,10 +81,27 @@ router.post("/live-start", auth, async (req, res) => {
       fcmToken: { $exists: true, $ne: "" },
     });
 
+    let settings = await AppSetting.findOne();
+
     let successCount = 0;
     let failedCount = 0;
 
     for (const user of users) {
+      // Registration ke kitne din hue
+      const days = Math.floor((Date.now() - new Date(user.createdAt)) / (1000 * 60 * 60 * 24));
+
+      // Successful donation check
+      const donation = await Donate.findOne({
+        userId: user._id,
+        paymentStatus: "success",
+      });
+
+      const canReceiveNotification = donation || days <= settings.freeNotificationDays;
+
+      if (!canReceiveNotification) {
+        continue;
+      }
+
       try {
         await admin.messaging().send({
           token: user.fcmToken,
