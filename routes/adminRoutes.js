@@ -22,7 +22,6 @@ router.get("/", (req, res) => {
 // =========================
 // SEND OTP
 // =========================
-
 router.post("/send-otp", async (req, res) => {
   try {
     const { mobile } = req.body;
@@ -30,7 +29,7 @@ router.post("/send-otp", async (req, res) => {
     if (!mobile) {
       return res.status(400).json({
         success: false,
-        message: "Mobile required",
+        message: "Phone number required",
       });
     }
 
@@ -46,28 +45,16 @@ router.post("/send-otp", async (req, res) => {
       });
     }
 
-    // ======================================
-    // GENERATE OTP
-    // ======================================
+    // Generate OTP
+    const otp = Math.floor(1000 + Math.random() * 9000).toString();
 
-    const otp = "1111"; //Math.floor(1000 + Math.random() * 9000).toString();
+    admin.otp = otp;
 
-    // ======================================
-    // FIND USER
-    // ======================================
+    admin.otpExpire = new Date(Date.now() + 5 * 60 * 1000);
 
-    let user = await User.findOne({ mobile });
+    await admin.save();
 
-    // ======================================
-    // SAVE OTP
-    // ======================================
-
-    user.otp = otp;
-
-    user.otpExpire = new Date(Date.now() + 5 * 60 * 1000);
-
-    await user.save();
-
+    // Send WhatsApp/SMS OTP
     const smsResponse = await axios.get(
       "https://bhashsms.com/api/sendmsgutil.php",
       {
@@ -84,20 +71,19 @@ router.post("/send-otp", async (req, res) => {
       },
     );
 
-    // ======================================
-    // SMS SEND HERE
-    // ======================================
-
     console.log("OTP:", otp);
+    console.log("SMS Response:", smsResponse.data);
 
-    res.json({
+    return res.json({
       success: true,
       message: "OTP sent successfully",
     });
   } catch (error) {
-    res.status(500).json({
+    console.log("OTP Error:", error.response?.data || error.message);
+
+    return res.status(500).json({
       success: false,
-      message: error.message,
+      message: "Failed to send OTP",
     });
   }
 });
