@@ -88,7 +88,9 @@ router.post("/live-start", auth, async (req, res) => {
 
     for (const user of users) {
       // Registration ke kitne din hue
-      const days = Math.floor((Date.now() - new Date(user.createdAt)) / (1000 * 60 * 60 * 24));
+      const days = Math.floor(
+        (Date.now() - new Date(user.createdAt)) / (1000 * 60 * 60 * 24),
+      );
 
       // Successful donation check
       const donation = await Donate.findOne({
@@ -98,7 +100,7 @@ router.post("/live-start", auth, async (req, res) => {
 
       const canReceiveNotification = !!donation || days <= settings.freeNotificationDays;
 
-      if (canReceiveNotification === true) {
+      if (!canReceiveNotification) {
         continue;
       }
 
