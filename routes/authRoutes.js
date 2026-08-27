@@ -324,9 +324,7 @@ router.get("/me", auth, async (req, res) => {
     }
 
     // Registration days
-    const days = Math.floor(
-      (Date.now() - new Date(user.createdAt)) / (1000 * 60 * 60 * 24),
-    );
+    const days = Math.floor((Date.now() - new Date(user.createdAt)) / (1000 * 60 * 60 * 24));
 
     // Successful donation
     const donation = await Donate.findOne({
@@ -334,8 +332,7 @@ router.get("/me", auth, async (req, res) => {
       paymentStatus: "success",
     });
 
-    const canReceiveNotification =
-      !!donation || days <= settings.freeNotificationDays;
+    const canReceiveNotification = !!donation || days <= settings.freeNotificationDays;
 
     // Convert document to object
     const userData = user.toObject();

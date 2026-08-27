@@ -96,9 +96,9 @@ router.post("/live-start", auth, async (req, res) => {
         paymentStatus: "success",
       });
 
-      const canReceiveNotification = donation || days <= settings.freeNotificationDays;
+      const canReceiveNotification = !!donation || days <= settings.freeNotificationDays;
 
-      if (!canReceiveNotification) {
+      if (canReceiveNotification === true) {
         continue;
       }
 
