@@ -1,4 +1,5 @@
 const express = require("express");
+const mongoose = require("mongoose");
 const router = express.Router();
 
 const User = require("../models/User");
@@ -644,6 +645,799 @@ router.get("/masjids/:id/ajan-history", adminAuth, async (req, res) => {
     res.status(500).send(error.message);
   }
 });
+
+// ============================================================
+// GET PAYOUT PAGE
+// ============================================================
+
+router.post("/masjids/:id/payout-settings", adminAuth, async (req, res) => {
+    try {
+      // ==================================================
+      // MASJID ID
+      // ==================================================
+
+      const { id } = req.params;
+
+      console.log(`Updating payout settings for masjid ID: ${id} with body:`, req.body);
+
+      // ==================================================
+      // VALIDATE OBJECT ID
+      // ==================================================
+
+      if (!mongoose.Types.ObjectId.isValid(id)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid masjid ID.",
+        });
+      }
+
+      // ==================================================
+      // REQUEST BODY
+      // ==================================================
+
+      const { walletAccepted, walletAcceptedAmount } = req.body;
+
+      // ==================================================
+      // TYPE VALIDATION
+      // ==================================================
+
+      if (!["fixed", "percentage"].includes(walletAccepted)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid wallet acceptance type. Use fixed or percentage.",
+        });
+      }
+
+      // ==================================================
+      // AMOUNT VALIDATION
+      // ==================================================
+
+      const amount = Number(walletAcceptedAmount);
+
+      if (!Number.isFinite(amount) || amount <= 0) {
+        return res.status(400).json({
+          success: false,
+          message: "Wallet accepted amount must be greater than 0.",
+        });
+      }
+
+      // ==================================================
+      // PERCENTAGE VALIDATION
+      // ==================================================
+
+      if (walletAccepted === "percentage" && amount > 100) {
+        return res.status(400).json({
+          success: false,
+          message: "Percentage cannot be greater than 100.",
+        });
+      }
+
+      // ==================================================
+      // ROUND AMOUNT
+      // ==================================================
+
+      const finalAmount = Math.round((amount + Number.EPSILON) * 100) / 100;
+
+      // ==================================================
+      // FIND MASJID
+      // ==================================================
+      //
+      // Masjid is stored in User collection.
+      //
+
+      const masjid = await User.findOne({
+        _id: id,
+        role: "masjid",
+      });
+
+      if (!masjid) {
+        return res.status(404).json({
+          success: false,
+          message: "Masjid not found.",
+        });
+      }
+
+      // ==================================================
+      // UPDATE SETTINGS
+      // ==================================================
+
+      masjid.walletAccepted = walletAccepted;
+
+      masjid.walletAcceptedAmount = finalAmount;
+
+      await masjid.save();
+
+      // ==================================================
+      // RESPONSE
+      // ==================================================
+
+      return res.status(200).json({
+        success: true,
+
+        message: "Wallet settings updated successfully.",
+
+        masjid: {
+          _id: masjid._id,
+
+          walletAccepted: masjid.walletAccepted,
+
+          walletAcceptedAmount: masjid.walletAcceptedAmount,
+        },
+      });
+    } catch (error) {
+      // ==================================================
+      // ERROR
+      // ==================================================
+
+      console.error("WALLET SETTINGS UPDATE ERROR:", error);
+
+      return res.status(500).json({
+        success: false,
+        message: "Server error while updating wallet settings.",
+        error: error.message,
+      });
+    }
+  },
+);
+
+// ============================================================
+// PAYOUT PAGE
+// ============================================================
+//
+// GET
+// /masjids/:id/payout?page=1
+//
+// ============================================================
+
+router.get("/masjids/:id/payout", adminAuth, async (req, res) => {
+  try {
+    // ==================================================
+    // PAGE / PAGINATION
+    // ==================================================
+
+    let page = parseInt(req.query.page, 10) || 1;
+
+    if (page < 1) {
+      page = 1;
+    }
+
+    // Same as your EJS pagination.
+    const limit = 20;
+
+    // ==================================================
+    // VALIDATE MASJID ID
+    // ==================================================
+
+    const masjidId = req.params.id;
+
+    if (!mongoose.Types.ObjectId.isValid(masjidId)) {
+      return res.status(400).send("Invalid masjid ID");
+    }
+
+    // ==================================================
+    // FIND MASJID
+    // ==================================================
+
+    const masjid = await User.findOne({
+      _id: masjidId,
+      role: "masjid",
+    }).lean();
+
+    if (!masjid) {
+      return res.status(404).send("Masjid not found");
+    }
+
+    // ==================================================
+    // SUCCESSFUL DONATION FILTER
+    // ==================================================
+
+    const donationFilter = {
+      masjidId: masjid._id,
+      paymentStatus: "success",
+    };
+
+    // ==================================================
+    // TOTAL SUCCESSFUL DONATIONS
+    // ==================================================
+
+    const totalRecords = await Donate.countDocuments(donationFilter);
+
+    // ==================================================
+    // TOTAL PAGES
+    // ==================================================
+
+    const totalPages = Math.max(1, Math.ceil(totalRecords / limit));
+
+    // ==================================================
+    // FIX PAGE IF OUT OF RANGE
+    // ==================================================
+
+    if (page > totalPages) {
+      page = totalPages;
+    }
+
+    const finalSkip = (page - 1) * limit;
+
+    // ==================================================
+    // DONATION HISTORY
+    // ==================================================
+
+    const payoutHistory = await Donate.find(donationFilter)
+      .populate("userId", "name mobile")
+      .populate("payoutProcessedBy", "name mobile")
+      .sort({
+        createdAt: -1,
+      })
+      .skip(finalSkip)
+      .limit(limit)
+      .lean();
+
+    // ==================================================
+    // TOTAL DONATION AMOUNT
+    // ==================================================
+
+    const totalDonationResult = await Donate.aggregate([
+      {
+        $match: donationFilter,
+      },
+
+      {
+        $group: {
+          _id: null,
+
+          total: {
+            $sum: "$amount",
+          },
+        },
+      },
+    ]);
+
+    const totalDonation =
+      totalDonationResult.length > 0
+        ? Number(totalDonationResult[0].total || 0)
+        : 0;
+
+    // ==================================================
+    // TOTAL PAYOUT AMOUNT
+    // ==================================================
+
+    const totalPayoutResult = await Donate.aggregate([
+      {
+        $match: {
+          masjidId: masjid._id,
+
+          payoutStatus: "success",
+        },
+      },
+
+      {
+        $group: {
+          _id: null,
+
+          total: {
+            $sum: "$payoutAmount",
+          },
+        },
+      },
+    ]);
+
+    const totalPayout =
+      totalPayoutResult.length > 0
+        ? Number(totalPayoutResult[0].total || 0)
+        : 0;
+
+    // ==================================================
+    // NUMBER OF PAYOUT TRANSACTIONS
+    // ==================================================
+
+    const totalPayoutTransactions = await Donate.countDocuments({
+      masjidId: masjid._id,
+
+      payoutStatus: "success",
+
+      payoutAmount: {
+        $gt: 0,
+      },
+    });
+
+    // ==================================================
+    // PAYOUT TRANSACTIONS
+    // ==================================================
+    //
+    // No Payout.js required.
+    //
+    // Payout information is stored inside Donate.
+    //
+
+    const payoutTransactions = await Donate.find({
+      masjidId: masjid._id,
+
+      payoutStatus: "success",
+
+      payoutAmount: {
+        $gt: 0,
+      },
+    })
+      .populate("userId", "name mobile")
+      .populate("payoutProcessedBy", "name mobile")
+      .sort({
+        payoutDate: -1,
+        createdAt: -1,
+      })
+      .lean();
+
+    // ==================================================
+    // RENDER PAGE
+    // ==================================================
+
+    return res.render("admin/payout", {
+      masjid,
+
+      payoutHistory,
+
+      payoutTransactions,
+
+      currentPage: page,
+
+      totalPages,
+
+      totalRecords,
+
+      totalDonation,
+
+      totalPayout,
+
+      totalPayoutTransactions,
+    });
+  } catch (error) {
+    // ==================================================
+    // ERROR
+    // ==================================================
+
+    console.error("PAYOUT PAGE ERROR:", error);
+
+    return res.status(500).send(error.message);
+  }
+});
+
+// ============================================================
+// CREATE PAYOUT
+// ============================================================
+//
+// POST
+// /masjids/:id/payout
+//
+// Body:
+//
+// {
+//     "amount": 5000,
+//     "note": "Cash payout"
+// }
+//
+// ============================================================
+
+router.post("/masjids/:id/payout", adminAuth, async (req, res) => {
+  // ======================================================
+  // MONGODB SESSION
+  // ======================================================
+
+  const session = await mongoose.startSession();
+
+  try {
+    // ==================================================
+    // MASJID ID
+    // ==================================================
+
+    const masjidId = req.params.id;
+
+    // ==================================================
+    // VALIDATE MASJID ID
+    // ==================================================
+
+    if (!mongoose.Types.ObjectId.isValid(masjidId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid masjid ID.",
+      });
+    }
+
+    // ==================================================
+    // REQUEST DATA
+    // ==================================================
+
+    const amount = Number(req.body.amount);
+
+    const note = typeof req.body.note === "string" ? req.body.note.trim() : "";
+
+    // ==================================================
+    // VALIDATE AMOUNT
+    // ==================================================
+
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Please enter a valid payout amount.",
+      });
+    }
+
+    // ==================================================
+    // ROUND PAYOUT
+    // ==================================================
+
+    const payoutAmount = Math.round((amount + Number.EPSILON) * 100) / 100;
+
+    // ==================================================
+    // ADMIN ID
+    // ==================================================
+
+    const adminId = req.user && req.user._id ? req.user._id : null;
+
+    // ==================================================
+    // START TRANSACTION
+    // ==================================================
+
+    session.startTransaction();
+
+    // ==================================================
+    // FIND MASJID
+    // ==================================================
+
+    const masjid = await User.findOne({
+      _id: masjidId,
+      role: "masjid",
+    }).session(session);
+
+    if (!masjid) {
+      await session.abortTransaction();
+
+      return res.status(404).json({
+        success: false,
+        message: "Masjid not found.",
+      });
+    }
+
+    // ==================================================
+    // CURRENT WALLET
+    // ==================================================
+
+    const currentWallet = Number(masjid.wallet || 0);
+
+    // ==================================================
+    // CHECK WALLET
+    // ==================================================
+
+    if (payoutAmount > currentWallet) {
+      await session.abortTransaction();
+
+      return res.status(400).json({
+        success: false,
+
+        message: `Insufficient wallet balance. Available balance: ₹${currentWallet.toLocaleString("en-IN")}`,
+
+        wallet: currentWallet,
+      });
+    }
+
+    // ==================================================
+    // FIND SUCCESSFUL UNPAID DONATIONS
+    // ==================================================
+    //
+    // payoutStatus:
+    //
+    // success = completely paid
+    //
+    // pending / null / missing = still available
+    //
+    // ==================================================
+
+    const unpaidDonations = await Donate.find({
+      masjidId: masjid._id,
+
+      paymentStatus: "success",
+
+      payoutStatus: {
+        $ne: "success",
+      },
+    })
+      .sort({
+        createdAt: 1,
+      })
+      .session(session);
+
+    // ==================================================
+    // CALCULATE AVAILABLE AMOUNT
+    // ==================================================
+
+    let unpaidDonationAmount = 0;
+
+    for (const donation of unpaidDonations) {
+      const donationAmount = Number(donation.amount || 0);
+
+      const alreadyPaid = Number(donation.payoutAmount || 0);
+
+      const remaining = Math.max(0, donationAmount - alreadyPaid);
+
+      unpaidDonationAmount += remaining;
+    }
+
+    // ==================================================
+    // ROUND AVAILABLE AMOUNT
+    // ==================================================
+
+    unpaidDonationAmount =
+      Math.round((unpaidDonationAmount + Number.EPSILON) * 100) / 100;
+
+    // ==================================================
+    // CHECK AVAILABLE DONATIONS
+    // ==================================================
+
+    if (unpaidDonationAmount < payoutAmount) {
+      await session.abortTransaction();
+
+      return res.status(400).json({
+        success: false,
+
+        message: `Not enough unpaid donation balance. Available for payout: ₹${unpaidDonationAmount.toLocaleString("en-IN")}`,
+
+        wallet: currentWallet,
+
+        availableForPayout: unpaidDonationAmount,
+      });
+    }
+
+    // ==================================================
+    // PREPARE PAYOUT ALLOCATION
+    // ==================================================
+
+    let remainingPayout = payoutAmount;
+
+    const allocations = [];
+
+    for (const donation of unpaidDonations) {
+      if (remainingPayout <= 0) {
+        break;
+      }
+
+      const donationAmount = Number(donation.amount || 0);
+
+      const alreadyPaid = Number(donation.payoutAmount || 0);
+
+      const remainingDonation = Math.max(0, donationAmount - alreadyPaid);
+
+      if (remainingDonation <= 0) {
+        continue;
+      }
+
+      const allocation = Math.min(remainingPayout, remainingDonation);
+
+      allocations.push({
+        donation,
+
+        amount: allocation,
+      });
+
+      remainingPayout =
+        Math.round((remainingPayout - allocation + Number.EPSILON) * 100) / 100;
+    }
+
+    // ==================================================
+    // SAFETY CHECK
+    // ==================================================
+
+    if (remainingPayout > 0) {
+      await session.abortTransaction();
+
+      return res.status(400).json({
+        success: false,
+
+        message: "Unable to allocate payout amount.",
+      });
+    }
+
+    // ==================================================
+    // DEDUCT WALLET ATOMICALLY
+    // ==================================================
+    //
+    // This protects against two admins trying
+    // to payout the same wallet simultaneously.
+    //
+    // ==================================================
+
+    const updatedMasjid = await User.findOneAndUpdate(
+      {
+        _id: masjid._id,
+
+        role: "masjid",
+
+        wallet: {
+          $gte: payoutAmount,
+        },
+      },
+
+      {
+        $inc: {
+          wallet: -payoutAmount,
+        },
+      },
+
+      {
+        new: true,
+
+        session,
+      },
+    );
+
+    // ==================================================
+    // WALLET UPDATE FAILED
+    // ==================================================
+
+    if (!updatedMasjid) {
+      await session.abortTransaction();
+
+      const latestMasjid = await User.findById(masjid._id);
+
+      return res.status(400).json({
+        success: false,
+
+        message: "Wallet balance changed. Please try again.",
+
+        wallet: latestMasjid ? Number(latestMasjid.wallet || 0) : 0,
+      });
+    }
+
+    // ==================================================
+    // UPDATE DONATION PAYOUT RECORDS
+    // ==================================================
+
+    const updatedDonations = [];
+
+    for (const allocation of allocations) {
+      const donation = allocation.donation;
+
+      const allocationAmount = Number(allocation.amount);
+
+      // ----------------------------------------------
+      // OLD PAYOUT
+      // ----------------------------------------------
+
+      const oldPayoutAmount = Number(donation.payoutAmount || 0);
+
+      // ----------------------------------------------
+      // NEW PAYOUT
+      // ----------------------------------------------
+
+      const newPayoutAmount =
+        Math.round(
+          (oldPayoutAmount + allocationAmount + Number.EPSILON) * 100,
+        ) / 100;
+
+      // ----------------------------------------------
+      // DONATION TOTAL
+      // ----------------------------------------------
+
+      const donationTotal = Number(donation.amount || 0);
+
+      // ----------------------------------------------
+      // UPDATE DONATION
+      // ----------------------------------------------
+
+      donation.payoutAmount = newPayoutAmount;
+
+      donation.payoutNote = note;
+
+      donation.payoutDate = new Date();
+
+      donation.payoutProcessedBy = adminId;
+
+      // ----------------------------------------------
+      // PAYOUT STATUS
+      // ----------------------------------------------
+
+      if (newPayoutAmount >= donationTotal) {
+        donation.payoutStatus = "success";
+      } else {
+        donation.payoutStatus = "pending";
+      }
+
+      // ----------------------------------------------
+      // SAVE
+      // ----------------------------------------------
+
+      await donation.save({
+        session,
+      });
+
+      // ----------------------------------------------
+      // RESPONSE DATA
+      // ----------------------------------------------
+
+      updatedDonations.push({
+        donationId: donation._id,
+
+        donationAmount: donationTotal,
+
+        payoutAmount: allocationAmount,
+
+        totalPayoutForDonation: newPayoutAmount,
+
+        payoutStatus: donation.payoutStatus,
+      });
+    }
+
+    // ==================================================
+    // COMMIT TRANSACTION
+    // ==================================================
+
+    await session.commitTransaction();
+
+    // ==================================================
+    // FINAL WALLET
+    // ==================================================
+
+    const finalWallet = Number(updatedMasjid.wallet || 0);
+
+    // ==================================================
+    // SUCCESS RESPONSE
+    // ==================================================
+
+    return res.status(200).json({
+      success: true,
+
+      message: `Payout of ₹${payoutAmount.toLocaleString("en-IN")} successful.`,
+
+      payout: {
+        amount: payoutAmount,
+
+        note: note,
+
+        date: new Date(),
+
+        transactions: updatedDonations.length,
+      },
+
+      allocations: updatedDonations,
+
+      masjid: {
+        id: updatedMasjid._id,
+
+        wallet: finalWallet,
+
+        totalDonation: Number(updatedMasjid.totalDonation || 0),
+      },
+    });
+  } catch (error) {
+    // ==================================================
+    // ROLLBACK
+    // ==================================================
+
+    try {
+      await session.abortTransaction();
+    } catch (abortError) {
+      console.error("TRANSACTION ABORT ERROR:", abortError);
+    }
+
+    // ==================================================
+    // ERROR
+    // ==================================================
+
+    console.error("ADMIN PAYOUT ERROR:", error);
+
+    return res.status(500).json({
+      success: false,
+
+      message: "Payout failed.",
+
+      error: error.message,
+    });
+  } finally {
+    // ==================================================
+    // END SESSION
+    // ==================================================
+
+    await session.endSession();
+  }
+});
+
 // =========================
 // LOGOUT
 // =========================

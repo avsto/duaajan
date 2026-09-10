@@ -196,6 +196,7 @@
               <th>Mobile</th>
               <th>Status</th>
               <th>Address</th>
+              <th>Wallet</th>
               <th>OTP</th>
               <th width="260">Action</th>
             </tr>
@@ -260,6 +261,9 @@
                 {{ masjid.address }}
               </td>
               <td>
+                {{ masjid.wallet || 'N/A' }}
+              </td>
+              <td>
                
                 {{ masjid.otp || 'N/A' }}
               </td>
@@ -296,10 +300,17 @@
                   Delete
                 </button>
                 <a
-                  class="btn-action btn-approve"
+                  class="btn-action btn-approve" style=" color: #fff; text-decoration: none;"
                   :href="`/admin/masjids/${masjid._id}/ajan-history`"
                 >
                   Ajan History
+              </a>
+
+               <a
+                  class="btn-action btn-approve" style="margin-left: 10px; color: #fff; text-decoration: none;"
+                  :href="`/admin/masjids/${masjid._id}/payout`"
+                >
+                  Payout
               </a>
 
               </td>
