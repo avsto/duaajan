@@ -28,6 +28,24 @@ const userSchema = new mongoose.Schema(
       default: null,
     },
 
+    wallet: {
+      type: Number,
+      default: 0,
+    },
+    walletAccepted: {
+      type: String,
+      enum: ["fixed", "percentage",],
+      default: "fixed",
+    },
+    walletAccepted: {
+      type: Number,
+      default: 1000,
+    },
+    totalDonation: {
+      type: Number,
+      default: 0,
+    },
+
     // =================================
     // USER
     // =================================

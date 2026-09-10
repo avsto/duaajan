@@ -98,9 +98,25 @@ router.post("/verify-donation", auth, async (req, res) => {
       razorpay_signature,
     } = req.body;
 
-    // ==========================
-    // VERIFY SIGNATURE
-    // ==========================
+    // =========================================
+    // VALIDATION
+    // =========================================
+
+    if (
+      !donationId ||
+      !razorpay_order_id ||
+      !razorpay_payment_id ||
+      !razorpay_signature
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Payment verification details are required",
+      });
+    }
+
+    // =========================================
+    // VERIFY RAZORPAY SIGNATURE
+    // =========================================
 
     const body = razorpay_order_id + "|" + razorpay_payment_id;
 
@@ -111,9 +127,9 @@ router.post("/verify-donation", auth, async (req, res) => {
 
     const isAuthentic = expectedSignature === razorpay_signature;
 
-    // ==========================
-    // FAILED
-    // ==========================
+    // =========================================
+    // INVALID SIGNATURE
+    // =========================================
 
     if (!isAuthentic) {
       await Donate.findByIdAndUpdate(donationId, {
@@ -126,33 +142,206 @@ router.post("/verify-donation", auth, async (req, res) => {
       });
     }
 
-    // ==========================
-    // SUCCESS
-    // ==========================
+    // =========================================
+    // FIND DONATION
+    // =========================================
 
-    const donation = await Donate.findByIdAndUpdate(
-      donationId,
-      {
-        paymentId: razorpay_payment_id,
-        signature: razorpay_signature,
-        paymentStatus: "success",
-      },
-      {
-        new: true,
-      },
-    );
+    const donation = await Donate.findById(donationId);
+
+    if (!donation) {
+      return res.status(404).json({
+        success: false,
+        message: "Donation not found",
+      });
+    }
+
+    // =========================================
+    // PREVENT DUPLICATE PAYMENT CREDIT
+    // =========================================
+
+    if (donation.paymentStatus === "success") {
+      return res.status(400).json({
+        success: false,
+        message: "Donation already verified",
+        donation,
+      });
+    }
+
+    // =========================================
+    // DONATION AMOUNT
+    // =========================================
+
+    const donationAmount = Number(donation.amount);
+
+    if (!donationAmount || donationAmount <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid donation amount",
+      });
+    }
+
+    // =========================================
+    // FIND USER
+    // =========================================
+
+    const user = await User.findById(req.user._id);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    // =========================================
+    // SELECTED MASJID CHECK
+    // =========================================
+
+    if (!user.selectedMasjid) {
+      return res.status(400).json({
+        success: false,
+        message: "No masjid selected",
+      });
+    }
+
+    // =========================================
+    // FIND SELECTED MASJID
+    // =========================================
+
+    const masjid = await User.findOne({
+      _id: user.selectedMasjid,
+      role: "masjid",
+    });
+
+    if (!masjid) {
+      return res.status(404).json({
+        success: false,
+        message: "Selected masjid not found",
+      });
+    }
+
+    // =========================================
+    // UPDATE DONATION STATUS FIRST
+    // =========================================
+
+    donation.paymentId = razorpay_payment_id;
+    donation.signature = razorpay_signature;
+    donation.paymentStatus = "success";
+
+    await donation.save();
+
+    // =========================================
+    // UPDATE TOTAL DONATION
+    // =========================================
+
+    const oldTotalDonation = Number(masjid.totalDonation) || 0;
+
+    const newTotalDonation = oldTotalDonation + donationAmount;
+
+    masjid.totalDonation = newTotalDonation;
+
+    // =========================================
+    // WALLET CALCULATION
+    // =========================================
+
+    const wallet = Number(masjid.wallet) || 0;
+
+    const acceptedAmount = Number(masjid.walletAcceptedAmount) || 0;
+
+    let walletToAdd = 0;
+
+    // =========================================
+    // FIXED
+    // =========================================
+    //
+    // Example:
+    // wallet = 800
+    // accepted = 1000
+    // donation = 500
+    //
+    // walletToAdd = 200
+    //
+    // =========================================
+
+    if (masjid.walletAccepted === "fixed") {
+      const remaining = Math.max(acceptedAmount - wallet, 0);
+
+      walletToAdd = Math.min(donationAmount, remaining);
+    }
+
+    // =========================================
+    // PERCENTAGE
+    // =========================================
+    //
+    // Example:
+    // donation = 1000
+    // percentage = 10
+    //
+    // walletToAdd = 100
+    //
+    // =========================================
+    else if (masjid.walletAccepted === "percentage") {
+      walletToAdd = (donationAmount * acceptedAmount) / 100;
+    }
+
+    // =========================================
+    // TOTAL PAYMENT
+    // =========================================
+    //
+    // Example:
+    //
+    // totalDonation = 10000
+    // acceptedAmount = 10
+    //
+    // maximum wallet = 1000
+    //
+    // =========================================
+    else if (masjid.walletAccepted === "totalPayment") {
+      const maximumWallet = (newTotalDonation * acceptedAmount) / 100;
+
+      const remaining = Math.max(maximumWallet - wallet, 0);
+
+      walletToAdd = Math.min(donationAmount, remaining);
+    }
+
+    // =========================================
+    // ADD TO WALLET
+    // =========================================
+
+    if (walletToAdd > 0) {
+      masjid.wallet = wallet + walletToAdd;
+    }
+
+    await masjid.save();
+
+    // =========================================
+    // SUCCESS RESPONSE
+    // =========================================
 
     return res.json({
       success: true,
       message: "Donation successful",
+
       donation,
+
+      masjid: {
+        id: masjid._id,
+        name: masjid.masjidName,
+        totalDonation: masjid.totalDonation,
+        wallet: masjid.wallet,
+        walletAccepted: masjid.walletAccepted,
+        walletAcceptedAmount: masjid.walletAcceptedAmount,
+      },
+
+      walletAdded: walletToAdd,
     });
   } catch (error) {
-    console.log(error);
+    console.log("VERIFY DONATION ERROR:", error);
 
     return res.status(500).json({
       success: false,
       message: "Verification failed",
+      error: error.message,
     });
   }
 });
