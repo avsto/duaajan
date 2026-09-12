@@ -132,7 +132,8 @@ router.post("/send-otp", async (req, res) => {
     // GENERATE OTP
     // ======================================
 
-    const otp = "1111"; //Math.floor(1000 + Math.random() * 9000).toString();
+    const otp = "1111";
+    // const otp = Math.floor(1000 + Math.random() * 9000).toString();
 
     // ======================================
     // FIND USER
@@ -147,7 +148,27 @@ router.post("/send-otp", async (req, res) => {
     if (!user) {
       user = await User.create({
         mobile,
+        walletAccepted: "fixed",
+        walletAcceptedAmount: 1000,
       });
+    }
+
+    // ======================================
+    // FIX OLD INVALID DATA
+    // ======================================
+
+    if (
+      user.walletAccepted !== "fixed" &&
+      user.walletAccepted !== "percentage"
+    ) {
+      user.walletAccepted = "fixed";
+    }
+
+    if (
+      typeof user.walletAcceptedAmount !== "number" ||
+      user.walletAcceptedAmount < 0
+    ) {
+      user.walletAcceptedAmount = 1000;
     }
 
     // ======================================
@@ -155,17 +176,20 @@ router.post("/send-otp", async (req, res) => {
     // ======================================
 
     user.otp = otp;
-
     user.otpExpire = new Date(Date.now() + 5 * 60 * 1000);
 
     await user.save();
+
+    // ======================================
+    // SEND SMS
+    // ======================================
 
     const smsResponse = await axios.get(
       "https://bhashsms.com/api/sendmsgutil.php",
       {
         params: {
           user: "Dua_2",
-          pass: "123456", // actual password
+          pass: "123456",
           sender: "BUZWAP",
           phone: mobile,
           text: "auth_01",
@@ -176,18 +200,17 @@ router.post("/send-otp", async (req, res) => {
       },
     );
 
-    // ======================================
-    // SMS SEND HERE
-    // ======================================
-
+    console.log("SMS Response:", smsResponse.data);
     console.log("OTP:", otp);
 
-    res.json({
+    return res.json({
       success: true,
       message: "OTP sent successfully",
     });
   } catch (error) {
-    res.status(500).json({
+    console.error("SEND OTP ERROR:", error);
+
+    return res.status(500).json({
       success: false,
       message: error.message,
     });
@@ -324,7 +347,9 @@ router.get("/me", auth, async (req, res) => {
     }
 
     // Registration days
-    const days = Math.floor((Date.now() - new Date(user.createdAt)) / (1000 * 60 * 60 * 24));
+    const days = Math.floor(
+      (Date.now() - new Date(user.createdAt)) / (1000 * 60 * 60 * 24),
+    );
 
     // Successful donation
     const donation = await Donate.findOne({
@@ -332,7 +357,8 @@ router.get("/me", auth, async (req, res) => {
       paymentStatus: "success",
     });
 
-    const canReceiveNotification = !!donation || days <= settings.freeNotificationDays;
+    const canReceiveNotification =
+      !!donation || days <= settings.freeNotificationDays;
 
     // Convert document to object
     const userData = user.toObject();
