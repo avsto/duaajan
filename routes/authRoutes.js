@@ -47,6 +47,8 @@ router.post(
       } else {
         user = new User({
           mobile: body.mobile,
+          walletAccepted: "fixed",
+          walletAcceptedAmount: 1000,
         });
       }
 
